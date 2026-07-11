@@ -380,6 +380,42 @@ else:
                      f'<div class="kpi-d" style="color:{MUTED}">reventilation de l\'effet quantité</div>'
                      f'</div>', unsafe_allow_html=True)
 
+# --------------------------------------------------------------------------- #
+# 7. Explicabilité — ce qui pilote la prévision
+# --------------------------------------------------------------------------- #
+st.markdown('<div class="sec">Ce qui pilote la prévision</div>', unsafe_allow_html=True)
+_imp_path = config.RESULTS_DIR / "explain" / "feature_importance.csv"
+_fam_path = config.RESULTS_DIR / "explain" / "by_family.csv"
+if not _imp_path.exists():
+    st.info("Explicabilité non calculée. Lancer :  `python -m src.explain --scenario 2`")
+else:
+    imp = pd.read_csv(_imp_path)
+    fam = pd.read_csv(_fam_path)
+    st.markdown('<div class="expl">Poids de chaque variable dans les décisions du modèle '
+                '(part du « gain » : la réduction d\'erreur qu\'elle apporte). À gauche, les '
+                '10 variables les plus influentes ; à droite, le total par famille. Lecture '
+                'attendue pour ce type de modèle : l\'historique récent des ventes et la '
+                'saisonnalité dominent, les promotions et la météo apportent un complément '
+                'ciblé.</div>', unsafe_allow_html=True)
+    g1, g2 = st.columns([1.5, 1])
+    with g1:
+        top = imp.head(10).iloc[::-1]
+        ifig = go.Figure(go.Bar(x=top.importance_pct, y=top.libelle, orientation="h",
+                                marker_color=NAVY, text=top.importance_pct.round(1),
+                                textposition="outside"))
+        ifig.update_layout(height=350, margin=dict(l=10, r=10, t=20, b=10), plot_bgcolor="#fff",
+                           paper_bgcolor="rgba(0,0,0,0)", xaxis_title="part du gain (%)")
+        st.plotly_chart(ifig, use_container_width=True)
+    with g2:
+        ff = fam.iloc[::-1]
+        ffig = go.Figure(go.Bar(x=ff.importance_pct, y=ff.famille, orientation="h",
+                                marker_color=ORANGE, text=ff.importance_pct.round(0),
+                                textposition="outside"))
+        ffig.update_layout(height=350, margin=dict(l=10, r=10, t=20, b=10), plot_bgcolor="#fff",
+                           paper_bgcolor="rgba(0,0,0,0)", xaxis_title="part du gain (%)")
+        st.plotly_chart(ffig, use_container_width=True)
+    st.caption("Diagnostic calculé sur le scénario 2 (météo incluse), sur les 5 ans d'historique.")
+
 st.markdown(f"""<br><div style="color:{INK_SOFT};font-size:12px">
 <b>Méthode.</b> Backtest « origine glissante » : {config.BACKTEST_N_FOLDS} plis de
 {config.BACKTEST_HORIZON_DAYS} jours, métrique WAPE + biais, comparés à une prévision naïve

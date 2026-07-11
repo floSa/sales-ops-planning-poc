@@ -52,9 +52,17 @@ src/
   ecarts.py         décomposition écart réel/prévu : prix, volume, mix + reventilation promo/calendaire
   rolling_forecast.py  atterrissage fin d'année + suivi mensuel de crédibilité
   simulation.py     uplift promo proposé depuis l'historique, application au scénario
-dashboard_simulation.py  Streamlit mono-profil CDG Ventes (charte AOSIS)
-results/            backtests, prévisions, écarts, rapports
+  explain.py        explicabilité : importance des variables (gain LightGBM) par famille métier
+  compare_scenarios.py  comparaison scénario 1 vs 2 (apport de la météo)
+tests/test_core.py  invariants (cascade, décomposition d'écarts, naïve, cohérence horaire)
+dashboard_simulation.py  Streamlit mono-profil CDG Ventes
+.streamlit/config.toml   thème clair forcé (lisibilité)
+results/            backtests, prévisions, écarts, explicabilité, rapports
 ```
+
+Tests : `python -m tests.test_core` (rapides, sans entraînement — vérifient les
+invariants mathématiques : cascade neutre == modèle, identité de la décomposition
+d'écarts, naïve lag-7, cohérence horaire/journalier).
 
 Le pipeline reprend l'architecture de `Retail/Sales_Forecasting` (même maille,
 même stratégie de pondération des ruptures, même logique directe/récursive/hybride),
@@ -108,6 +116,26 @@ surprise météo » — structurellement optimiste puisque les effets météo so
 surtout pénalisants. L'écart entre les deux atterrissages (~0,5 M€) chiffre
 l'enjeu météo ; en V2, brancher des prévisions météo réelles à 15 j puis des
 scénarios stochastiques au-delà.
+
+## Ce qui pilote la prévision (explicabilité)
+
+`python -m src.explain` extrait l'importance des variables (gain LightGBM),
+regroupée par famille métier (`results/explain/`) :
+
+| Famille | Part du gain |
+|---|---|
+| Historique des ventes (lags, moyennes glissantes) | **80,0 %** |
+| Calendrier & saisonnalité | 16,0 % |
+| Identité produit & magasin | 2,0 % |
+| Prix & promotions | 1,6 % |
+| Météo | 0,4 % |
+
+Variable la plus influente : le **niveau moyen des 28 derniers jours**
+(74 % à elle seule), puis le statut d'ouverture et les horaires du magasin.
+Profil classique d'un modèle de demande retail : l'auto-régressif domine, le
+calendrier structure, promo et météo affinent. La météo pèse peu **au global**
+— cohérent avec le §Résultats : son apport se concentre sur les jours
+d'anomalie et à la maille de pilotage, pas sur la moyenne SKU × jour.
 
 ## Hypothèses de travail 🟡 (à valider avec le client)
 

@@ -1,0 +1,51 @@
+feature,gain,importance_pct,libelle,famille
+roll_mean_28,11406402.50870514,74.06,Niveau moyen 28 j,Historique des ventes
+is_open,1480229.6550750732,9.61,Magasin ouvert,Calendrier & saisonnalité
+roll_std_28,608659.3917808533,3.95,Variabilité 28 j,Historique des ventes
+open_hours,599788.6232290268,3.89,Heures d'ouverture,Calendrier & saisonnalité
+base_price,176721.0725889206,1.15,Prix catalogue,Prix & promotions
+dow_sin,173824.08613681793,1.13,Cycle hebdomadaire,Calendrier & saisonnalité
+sku_code,147549.82715797424,0.96,Identité du produit,Identité produit & magasin
+roll_mean_7,142836.44165563583,0.93,Niveau moyen 7 j,Historique des ventes
+store_code,79209.30007743835,0.51,Identité du magasin,Identité produit & magasin
+ewma_7,64161.88454723358,0.42,Tendance récente lissée,Historique des ventes
+dow_cos,61312.31351661682,0.4,Cycle hebdomadaire,Calendrier & saisonnalité
+day_of_week,36815.26069355011,0.24,Jour de la semaine,Calendrier & saisonnalité
+is_weekend,36289.435428619385,0.24,Week-end,Calendrier & saisonnalité
+lag_364,32358.592304229736,0.21,Ventes l'an dernier (même jour),Historique des ventes
+temp_anomaly,32225.69668197632,0.21,Anomalie de température,Météo
+doy_cos,27921.321299552917,0.18,Cycle annuel,Calendrier & saisonnalité
+rain_mm,27738.25639152527,0.18,Pluie,Météo
+commodity_code,22838.18643760681,0.15,Famille de produit,Identité produit & magasin
+rel_price,21881.054404258728,0.14,Prix relatif (vs habituel),Prix & promotions
+brand_type_code,14649.88659954071,0.1,Type de marque,Identité produit & magasin
+surface_m2,13671.452114105225,0.09,Surface du magasin,Identité produit & magasin
+roll_std_7,13379.439933776855,0.09,Variabilité 7 j,Historique des ventes
+promo_discount,13466.830577850342,0.09,Profondeur de remise,Prix & promotions
+days_since_start,12344.330031394958,0.08,Ancienneté dans l'historique,Identité produit & magasin
+doy_sin,12355.261306762695,0.08,Cycle annuel,Calendrier & saisonnalité
+lag_28,11557.960923194885,0.08,Ventes il y a 4 semaines,Historique des ventes
+lag_7,12719.98040485382,0.08,Ventes il y a 1 semaine,Historique des ventes
+lag_14,11377.36109828949,0.07,Ventes il y a 2 semaines,Historique des ventes
+is_promo_mea,9555.721324920654,0.06,Mise en avant,Prix & promotions
+is_post_promo,8684.856128692627,0.06,Contrecoup post-promo,Prix & promotions
+lag_1,8550.653002738953,0.06,Ventes de la veille,Historique des ventes
+week_of_year,9347.768211364746,0.06,Semaine de l'année,Calendrier & saisonnalité
+day_of_month,8464.44567489624,0.05,Jour du mois,Calendrier & saisonnalité
+is_promo_cadeau,7129.837649345398,0.05,Cadeau à seuil,Prix & promotions
+days_since_holiday,8154.809827804565,0.05,Jours depuis un férié,Calendrier & saisonnalité
+days_until_holiday,8071.853799819946,0.05,Jours avant un férié,Calendrier & saisonnalité
+is_promo_seuils,5469.335877418518,0.04,Promo à seuil,Prix & promotions
+region_code,5766.692680358887,0.04,Région,Identité produit & magasin
+is_eb,6441.5976819992065,0.04,Exclusivité enseigne (EB),Identité produit & magasin
+store_type_code,4494.985054969788,0.03,Taille de magasin,Identité produit & magasin
+month,4107.458684921265,0.03,Mois,Calendrier & saisonnalité
+is_pl,2550.0120334625244,0.02,Marque distributeur (PL),Identité produit & magasin
+is_online,3464.317512512207,0.02,Canal Online,Identité produit & magasin
+is_promo_produits,3225.1088523864746,0.02,Promo produits,Prix & promotions
+is_day_before_holiday,2023.593801498413,0.01,Veille de férié,Calendrier & saisonnalité
+influence_day,1187.4913873672485,0.01,Jour de la promo influence,Prix & promotions
+is_promo_influence,234.2223024368286,0.0,Promo influence,Prix & promotions
+is_pont,80.38910007476807,0.0,Pont,Calendrier & saisonnalité
+is_holiday,392.58229637145996,0.0,Jour férié,Calendrier & saisonnalité
+is_promo_ouverture,420.15540981292725,0.0,Promo ouverture magasin,Prix & promotions

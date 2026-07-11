@@ -1,25 +1,39 @@
 # MaxiZoo — POC Prévision des ventes
 
-Dossier créé le 2026-07-11. Le brief client, l'audit de l'existant et le **cadrage V1 sont finalisés** (sans réponse client — décisions documentées comme hypothèses à valider). **La prochaine conversation attaque directement le développement.**
+POC **développé et fonctionnel** (V1 livrée le 2026-07-11). Voir [README.md](README.md)
+pour l'architecture, le mode d'emploi, les résultats et les hypothèses 🟡.
+Le cadrage d'origine est dans `00_Preparatif/` (spec : [03_Cadrage_Points_Ouverts.md](00_Preparatif/03_Cadrage_Points_Ouverts.md)).
 
-## Point de départ pour la prochaine conversation
+## L'essentiel
 
-Coller le prompt de [00_Preparatif/04_Prompt_Demarrage_POC.md](00_Preparatif/04_Prompt_Demarrage_POC.md) en tout début de conversation — il référence tout ce qui est nécessaire dans le bon ordre :
-1. [03_Cadrage_Points_Ouverts.md](00_Preparatif/03_Cadrage_Points_Ouverts.md) — la spec V1 actionnable (scope, cible, maille, données, étapes concrètes).
-2. [01_Brief_Consignes.md](00_Preparatif/01_Brief_Consignes.md) — brief client structuré, zones ambiguës signalées `⚠️`.
-3. [02_Existant_Reutilisable.md](00_Preparatif/02_Existant_Reutilisable.md) — audit de ce qui, dans `Retail/` (OneDrive), est réutilisable.
+- **Données 100 % synthétiques** (5 ans, 12 magasins villes FR + ONLINE, 60 SKU),
+  générées par `src/generate_data.py` — seule la météo est réelle (Open-Meteo,
+  figée dans `data/referentiel/weather.csv`). Doc : [data/README.md](data/README.md).
+- **Pipeline bout-en-bout** : `python main.py` (génération → backtests 2 scénarios →
+  prévisions S2 2026 → écarts → rolling forecast → comparaison scénarios, ~1 h).
+- **Dashboard** : `streamlit run dashboard_simulation.py` (mono-profil CDG Ventes).
+- **Résultats clés** : WAPE 0,69 vs 0,94 naïve lag-7 (+26 %, bat la baseline sur
+  chaque magasin et catégorie) ; WAPE 0,16 à la maille pilotage magasin × jour ;
+  apport scénario 2 (météo) : +5,1 % au global pilotage, +15,9 % les jours de pluie ;
+  atterrissage 2026 ≈ 10,4 M€ (synthétique).
 
-## Scope V1 (décidé le 2026-07-11, révisé le même jour)
+## Environnement (important)
 
-Les 4 blocs du brief sont tous couverts, au moins en version dégradée — aucun n'est hors scope :
+Python : venv WSL `~/Projets/MaxiZoo/.venv` (pas de sudo — libgomp embarqué via
+`.venv/lib/native/` + `.pth` de préchargement, cf. mémoire projet). Exécution :
+`wsl.exe -d Ubuntu-24.04 -- bash -lc "cd ~/Projets/MaxiZoo && .venv/bin/python …"`.
+Machine partagée avec d'autres services : ne pas paralléliser les entraînements.
 
-- **Bloc A — moteur de prévision** : complet. Maille **magasin × SKU (Stock Keeping Unit, référence produit unique) × jour** (pas de compromis sur la granularité — réutilise directement l'architecture existante de `Sales_Forecasting`), cascade PV (Prix de Vente) × PA (Panier Article) → PM (Panier Moyen) + inflation × transactions → CA (Chiffre d'Affaires) net.
-- **Bloc B — dashboard de simulation** : dégradé "**Profil unique**" — un seul profil (CDG Ventes, Contrôleur De Gestion), pas de moteur de droits multi-rôles (DR/DV).
-- **Bloc C — module ETP** (Équivalent Temps Plein, ≠ RH au sens large, ≠ masse salariale) : dégradé "**ETP interne seul**" — calcul basé sur CA/fréquentation/horaires internes, sans signal concurrentiel (données concurrentes non disponibles).
-- **Bloc D — analyse d'écarts + rolling forecast** : complet, sauf la couche données non structurées (météo/tendances/concurrence pour expliquer les écarts) qui reste hors scope V1.
+## Conventions
 
-Horizon mensuel glissant (agrégé depuis des prévisions journalières), données synthétiques inspirées de `Walmart_Weather`. Détail complet, rationale et définitions de chaque sigle : [03_Cadrage_Points_Ouverts.md](00_Preparatif/03_Cadrage_Points_Ouverts.md).
+- Métrique : WAPE + biais, jamais le MAPE. Baseline : naïve saisonnière lag-7.
+- Grain natif unique : magasin × SKU × jour ; le reste = agrégations de reporting.
+- Hypothèses non validées client marquées 🟡 (code, README, dashboard).
+- Commits réguliers ; push prévu sur le GitHub perso de Florian en fin de projet.
 
-## Lien avec le reste du dossier `Retail/`
+## Lien avec le reste du dossier `Retail/` (OneDrive)
 
-Ce chantier recoupe le brief déjà posé dans `Retail/POC_Pilotage_CA_Stock_RH/CLAUDE.md` (CA + stock + masse salariale) — les deux restent distincts pour l'instant : ce POC calcule un besoin en ETP (effectif), pas une masse salariale (coût en euros) — voir §10 de [03_Cadrage_Points_Ouverts.md](00_Preparatif/03_Cadrage_Points_Ouverts.md) pour le pont entre les deux si besoin plus tard. L'existant technique/méthodologique mobilisable se trouve dans `Retail/` (`Sales_Forecasting`, `Wiki_Prevision_Ventes`, `Pilotage_StoreItem`, `PowerBI_Pilotage`, `Walmart_Weather`).
+Socle repris de `Retail/Sales_Forecasting` (pipeline GBM Tweedie) et
+`Pilotage_StoreItem` (dashboard, drift). Ce POC calcule un **besoin en ETP**
+(effectif), pas une masse salariale — pont éventuel vers
+`POC_Pilotage_CA_Stock_RH` : ETP × coût moyen (cadrage §10, non traité).

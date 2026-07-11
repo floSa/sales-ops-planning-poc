@@ -63,9 +63,18 @@ def run_forecast(scenario: int = 1, mode: str | None = None) -> pd.DataFrame:
     hist_window = hist[hist["date"] > hist_end - pd.Timedelta(days=config.HIST_WINDOW_DAYS)]
     pred_rec = recursive_predict(models, future, hist_window, feats).values
 
+    # Pondération dépendante de l'horizon : l'alpha du backtest n'est calibré
+    # que sur BACKTEST_HORIZON_DAYS ; au-delà, les lags courts de la branche
+    # directe sont tous NaN et son biais se creuse avec l'horizon (mesuré dans
+    # by_horizon.csv : -2 % en semaine 1 -> -12 % en semaine 4), tandis que la
+    # récursive est quasi non biaisée (+0,2 % au backtest). Donc : hybride sur
+    # les 28 premiers jours, récursive pure ensuite.
     alpha = _backtest_alpha(scenario)
-    pred = alpha * pred_rec + (1 - alpha) * pred_dir
-    print(f"Hybride alpha={alpha}")
+    h_days = (future["date"] - hist_end).dt.days.values
+    w_rec = np.where(h_days <= config.BACKTEST_HORIZON_DAYS, alpha, 1.0)
+    pred = w_rec * pred_rec + (1 - w_rec) * pred_dir
+    print(f"Hybride alpha={alpha} (jours 1-{config.BACKTEST_HORIZON_DAYS}), "
+          f"récursive pure au-delà")
 
     out = future[KEYS + ["date", "commodity_group", "unit_price", "is_open"]].copy()
     out["quantity_pred"] = pred

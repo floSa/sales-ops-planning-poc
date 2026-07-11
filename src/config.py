@@ -98,8 +98,8 @@ SEASONAL_NAIVE_LAG = 7      # baseline à battre : naïve saisonnière hebdomada
 # paramétrables dans le dashboard. Le canal ONLINE est exclu du calcul ETP
 # (pas de magasin physique ; la logistique e-commerce est hors scope V1).
 # --------------------------------------------------------------------------- #
-ETP_PROD_CA_PER_HOUR = 220.0     # € de CA gérés par heure-vendeur 🟡
-ETP_TICKETS_PER_HOUR = 12.0      # tickets encaissables par heure-vendeur 🟡
+ETP_PROD_CA_PER_HOUR = 120.0     # € de CA gérés par heure-vendeur 🟡
+ETP_TICKETS_PER_HOUR = 8.0       # tickets encaissables par heure-vendeur 🟡
 ETP_MIN_STAFF = 2.0              # effectif minimum de sécurité par heure ouvrée 🟡
 ETP_HOURS_PER_MONTH = 151.67     # heures mensuelles d'un temps plein (35 h/sem)
 

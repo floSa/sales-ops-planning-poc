@@ -20,7 +20,8 @@ import sys
 import time
 
 
-def run(skip_data: bool, scenarios: list[int], mode: str | None):
+def run(skip_data: bool, scenarios: list[int], mode: str | None,
+        skip_explain: bool = False):
     t0 = time.time()
 
     if not skip_data:
@@ -48,6 +49,11 @@ def run(skip_data: bool, scenarios: list[int], mode: str | None):
         from src.compare_scenarios import compare
         print(compare().to_string(index=False))
 
+    if not skip_explain:
+        print("\n" + "=" * 70 + "\nÉTAPE 6 — Explicabilité (ce qui pilote la prévision)\n" + "=" * 70)
+        from src.explain import run_explain
+        run_explain(scenario=2 if 2 in scenarios else scenarios[0], mode=mode)
+
     print(f"\nPipeline complet en {(time.time() - t0) / 60:.1f} min. "
           f"Dashboard : streamlit run dashboard_simulation.py")
 
@@ -58,6 +64,9 @@ if __name__ == "__main__":
     ap.add_argument("--scenario", type=int, default=None, choices=[1, 2],
                     help="un seul scénario (défaut : les deux)")
     ap.add_argument("--mode", default=None, choices=[None, "fast", "ensemble"])
+    ap.add_argument("--skip-explain", action="store_true",
+                    help="ne pas recalculer l'explicabilité (évite un entraînement)")
     a = ap.parse_args()
-    run(a.skip_data, [a.scenario] if a.scenario else [1, 2], a.mode)
+    run(a.skip_data, [a.scenario] if a.scenario else [1, 2], a.mode,
+        skip_explain=a.skip_explain)
     sys.exit(0)

@@ -1,0 +1,13 @@
+# Force le thème CLAIR quel que soit le réglage système de l'utilisateur.
+# Sans ça, Streamlit peut rendre en thème sombre (texte quasi-blanc) alors que
+# le CSS du dashboard impose un fond gris clair -> texte blanc illisible sur gris.
+[theme]
+base = "light"
+primaryColor = "#E84E24"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F2F2F7"
+textColor = "#1A1A1A"
+font = "sans serif"
+
+[client]
+toolbarMode = "minimal"

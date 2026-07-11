@@ -90,7 +90,7 @@ MODEL_MODE = "fast"         # "fast" = LightGBM seul | "ensemble" = XGB + LGBM +
 TWEEDIE_VARIANCE_POWER = 1.3
 BACKTEST_N_FOLDS = 4
 BACKTEST_HORIZON_DAYS = 28  # plis de 4 semaines, agrégeables en vue mensuelle
-HIST_WINDOW_DAYS = 90       # fenêtre d'historique pour initialiser l'inférence récursive
+HIST_WINDOW_DAYS = 380      # fenêtre d'historique pour l'inférence récursive (>= 364 pour lag_364)
 SEASONAL_NAIVE_LAG = 7      # baseline à battre : naïve saisonnière hebdomadaire
 
 # --------------------------------------------------------------------------- #

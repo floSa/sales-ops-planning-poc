@@ -1,17 +1,17 @@
 === Contrôles de cohérence — jeu synthétique MaxiZoo ===
-[OK ] Σ CA horaire == CA journalier — écart max 0.040 €
+[OK ] Σ CA horaire == CA journalier — écart max 0.050 €
 [OK ] Σ tickets horaires == tickets journaliers — écart max 0.0
 [OK ] PA moyen dans [1.2, 4.5] — PA moyen 2.27
-[OK ] Part de lignes à zéro dans [0.15, 0.65] — 45.3%
-[OK ] Part de lignes en rupture dans [0.3 %, 3 %] — 1.09%
+[OK ] Part de lignes à zéro dans [0.15, 0.65] — 45.7%
+[OK ] Part de lignes en rupture dans [0.3 %, 3 %] — 1.10%
 [OK ] Aucun prix/CA/quantité négatif
-[OK ] Uplift médian par SKU des promos 'produits' > 1.25 — ×1.51 (sur 57 SKU)
+[OK ] Uplift médian par SKU des promos 'produits' > 1.25 — ×1.53 (sur 57 SKU)
 [OK ] Cold start SKU003 (Croquettes chien senior light …) absent avant 2023-03-15
 [OK ] Cold start SKU026 (Fontaine à eau 2 L…) absent avant 2024-09-01
 [OK ] Cold start SKU049 (Lampe UVB 100 W…) absent avant 2025-02-15
 [OK ] Cold start SKU060 (Coffret cadeau Noël animaux…) absent avant 2025-10-01
 [OK ] Météo complète jusqu'à FORECAST_END
-[OK ] CA Online en forte croissance (dernière année > 1.5× première) — ×2.01
+[OK ] CA Online en forte croissance (dernière année > 1.5× première) — ×2.05
 
 Lignes sales_daily : 1,363,726 | traffic : 23,738 | hourly : 244,952
-CA total 5 ans : 46.5 M€ (synthétique)
+CA total 5 ans : 45.7 M€ (synthétique)

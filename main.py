@@ -43,6 +43,11 @@ def run(skip_data: bool, scenarios: list[int], mode: str | None):
         atterrissage(scenario=s)
         suivi_mensuel(scenario=s)
 
+    if set(scenarios) == {1, 2}:
+        print("\n" + "=" * 70 + "\nÉTAPE 5 — Comparaison scénario 1 vs 2\n" + "=" * 70)
+        from src.compare_scenarios import compare
+        print(compare().to_string(index=False))
+
     print(f"\nPipeline complet en {(time.time() - t0) / 60:.1f} min. "
           f"Dashboard : streamlit run dashboard_simulation.py")
 

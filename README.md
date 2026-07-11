@@ -72,14 +72,42 @@ même stratégie de pondération des ruptures, même logique directe/récursive/
 - Grain natif unique magasin × SKU × jour : semaine/mois, WTD/MTD/YTD et
   catégorie sont des **agrégations de reporting**, pas des modèles séparés.
 
-## Résultats du backtest
+## Résultats du backtest (rolling-origin 4 plis × 28 j, mars→juin 2026)
 
-_(section mise à jour à chaque exécution de `main.py` — voir `results/backtest/`)_
+Au **grain natif SKU × magasin × jour** (le plus dur : ~46 % de zéros) :
 
-| Scénario | WAPE hybride | WAPE naïve | Gain | Biais |
+| Scénario | WAPE hybride | WAPE naïve lag-7 | Gain | Biais CA (récursive) |
 |---|---|---|---|---|
-| 1 — Baseline | à compléter | — | — | — |
-| 2 — Baseline + IA (météo) | à compléter | — | — | — |
+| 1 — Baseline (calendaire + promos) | **0,694** | 0,937 | **+25,9 %** | +2,7 % |
+| 2 — Baseline + IA (météo) | **0,693** | 0,937 | **+26,1 %** | +2,5 % |
+
+Le modèle bat la naïve sur **chacun des 13 magasins et des 8 catégories**
+(détail : `results/backtest/scenario*/by_store.csv`, `by_category.csv`).
+
+Au **grain de pilotage magasin × jour** (celui du CDG — agrégation des
+prévisions SKU), le WAPE tombe à **0,16-0,17** et l'apport du scénario 2
+devient net (`results/backtest/comparaison_scenarios.csv`) :
+
+| Segment (magasin × jour) | WAPE scén. 1 | WAPE scén. 2 | Apport IA météo |
+|---|---|---|---|
+| Tous jours | 0,170 | 0,162 | **+5,1 %** |
+| Anomalie température > 5 °C | 0,206 | 0,192 | **+6,9 %** |
+| Pluie > 6 mm | 0,200 | 0,168 | **+15,9 %** |
+
+Lecture : au grain SKU l'apport météo est marginal (+0,2 % global, +3 % sur
+les épisodes) car le bruit des séries fines domine ; c'est à la maille de
+pilotage qu'il se matérialise. ⚠️ L'ampleur dépend de la calibration du
+générateur (cf. data/README.md) — à re-mesurer sur données réelles.
+
+**Prévision opérationnelle** (récursive, biais +2,7 %) : atterrissage 2026 =
+réel janv-juin **5,09 M€** + prévu juil-déc **5,33 M€** = **10,42 M€**
+(scénario 1), profil mensuel aligné sur N-1 (+1,7 %, pic de Noël préservé).
+L'atterrissage scénario 2 ressort à **10,89 M€** : au-delà du réalisé, la
+météo future est la **climatologie** (anomalie nulle), donc une année « sans
+surprise météo » — structurellement optimiste puisque les effets météo sont
+surtout pénalisants. L'écart entre les deux atterrissages (~0,5 M€) chiffre
+l'enjeu météo ; en V2, brancher des prévisions météo réelles à 15 j puis des
+scénarios stochastiques au-delà.
 
 ## Hypothèses de travail 🟡 (à valider avec le client)
 
@@ -121,6 +149,9 @@ complétées en développement :
 - Les arbres n'extrapolent pas la tendance au-delà de l'historique : la
   croissance Online au-delà du réalisé est portée par les lags récursifs, pas
   par un terme de tendance explicite.
+- La prévision du scénario 2 au-delà du réalisé repose sur la climatologie
+  (anomalie météo nulle) : c'est un scénario « météo normale », borne haute
+  quand les effets météo sont pénalisants (cf. Résultats).
 - Pas de réconciliation hiérarchique (un seul niveau de modélisation,
   agrégations simples — MinT à considérer si plusieurs niveaux deviennent
   consommés simultanément, wiki §6).

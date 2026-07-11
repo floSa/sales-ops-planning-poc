@@ -59,6 +59,11 @@ Le pipeline de prévision doit les retrouver — c'est le test du POC :
   (effet décalé ~28 j, online), mise en avant, ouverture magasin (pic local).
 - Météo : canicule → trafic magasin en baisse et online en hausse,
   antiparasitaires/reptiles dopés ; vague de froid → rayon oiseaux dopé.
+  ⚠️ L'ampleur de ces effets est **calibrée pour être détectable** par le
+  scénario 2 (jusqu'à -4,5 %/°C d'anomalie chaude sur le trafic magasin,
+  plancher ×0,65) : avec des effets plus faibles, le signal est noyé par le
+  bruit des séries SKU et les deux scénarios deviennent indiscernables —
+  l'apport réel de la météo devra être mesuré sur données réelles MaxiZoo.
 - Ruptures de stock (~1 % des lignes) : ventes censurées, flag `is_rupture`
   → sample weights dans le pipeline (demande ≠ ventes, wiki §0.1).
 - Intermittence : ~45 % de lignes à zéro (longue traîne équipement).

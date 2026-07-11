@@ -391,21 +391,25 @@ def generate_facts(stores, hours, products, promos, scope, inflation, wx,
     rain = wx_h.pivot(index="store_id", columns="date", values="rain_mm").reindex(store_ids).values
     temp = wx_h.pivot(index="store_id", columns="date", values="temp_mean_c").reindex(store_ids).values
 
+    # Ampleur CALIBRÉE POUR ÊTRE DÉTECTABLE par le scénario 2 (choix documenté
+    # dans data/README.md) : avec des effets plus faibles (~2 %/°C), le signal
+    # météo est noyé par le bruit négatif-binomial à la maille SKU et le
+    # scénario 2 n'a rien à apprendre — vérifié empiriquement au backtest.
     hot = np.maximum(anom - 2.0, 0.0)      # épisodes nettement plus chauds que le normal
     cold = np.maximum(-anom - 2.0, 0.0)    # nettement plus froids
     traffic_weather = np.where(is_online_store[:, None],
-                               np.minimum(1.0 + 0.012 * hot, 1.10) * np.where(rain > 6, 1.04, 1.0),
-                               np.maximum(1.0 - 0.020 * hot, 0.84)
-                               * np.where(rain > 6, 0.93, 1.0)
-                               * np.maximum(1.0 - 0.008 * cold, 0.92))   # (stores, D)
+                               np.minimum(1.0 + 0.030 * hot, 1.25) * np.where(rain > 6, 1.08, 1.0),
+                               np.maximum(1.0 - 0.045 * hot, 0.65)
+                               * np.where(rain > 6, 0.85, 1.0)
+                               * np.maximum(1.0 - 0.020 * cold, 0.82))   # (stores, D)
     # effets par groupe : chaleur -> antiparasitaires/reptiles/aquario ; froid -> oiseaux du ciel
     grp_weather = np.ones((S, D), dtype=np.float32)
-    warm_groups = {"Hygiène & Soins": 0.030, "Reptile": 0.020, "Aquariophilie": 0.012}
+    warm_groups = {"Hygiène & Soins": 0.060, "Reptile": 0.045, "Aquariophilie": 0.030}
     for g, coef in warm_groups.items():
         mask = np.isin(sku_of_series, np.flatnonzero(group_of_sku == g))
-        grp_weather[mask] = np.minimum(1.0 + coef * hot[store_of_series[mask]], 1.45)
+        grp_weather[mask] = np.minimum(1.0 + coef * hot[store_of_series[mask]], 1.80)
     mask_oiseau = np.isin(sku_of_series, np.flatnonzero(group_of_sku == "Oiseau"))
-    grp_weather[mask_oiseau] = np.minimum(1.0 + 0.045 * cold[store_of_series[mask_oiseau]], 1.60)
+    grp_weather[mask_oiseau] = np.minimum(1.0 + 0.080 * cold[store_of_series[mask_oiseau]], 1.90)
 
     # --- promotions : facteurs qty, remise prix, boost PA, id affiché ---
     promo_factor = np.ones((S, D), dtype=np.float32)

@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+# gros fichiers de faits régénérables via src/generate_data.py
+data/transactions/*.csv
+results/models/

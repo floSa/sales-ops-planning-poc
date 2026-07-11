@@ -1,0 +1,14 @@
+# POC Prévision des ventes MaxiZoo — environnement Python 3.12
+pandas>=2.2
+numpy>=1.26
+pyarrow>=15.0          # faits en parquet (léger et rapide) ; référentiels en CSV
+lightgbm>=4.3          # modèle GBM par défaut (mode rapide)
+xgboost>=2.0           # ensemble 3-GBM en option (config.ENSEMBLE_FULL)
+catboost>=1.2          # ensemble 3-GBM en option
+optuna>=3.6            # optimisation d'hyperparamètres (optionnelle)
+scikit-learn>=1.4
+holidays>=0.50         # jours fériés France (features calendaires)
+requests>=2.31         # fetch unique météo Open-Meteo à la génération des données
+streamlit>=1.35        # dashboard de simulation mono-profil
+plotly>=5.20
+matplotlib>=3.8

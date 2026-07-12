@@ -5,3 +5,6 @@ __pycache__/
 # gros fichiers de faits régénérables via src/generate_data.py
 data/transactions/*.csv
 results/models/
+# config outillage locale (Claude Code) — pas de contenu déliverable, non publiée
+.claude/
+CLAUDE.md

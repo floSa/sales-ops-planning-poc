@@ -1,71 +1,72 @@
 """
-Dashboard de simulation — POC Prévision des ventes MaxiZoo (Bloc B).
+Dashboard de simulation — POC Prévision des ventes (Bloc B).
 
-Version dégradée "Profil unique" (cadrage §4) : UN seul profil simulé,
-le CDG (Contrôleur De Gestion) Ventes. Pas de moteur de droits, pas de
-validation hiérarchique, pas de profils CDG Online / DR / DV.
+Application Streamlit MULTI-PAGES (st.navigation). Profil unique CDG Ventes
+(cadrage §4). Toutes les données affichées sont SYNTHÉTIQUES (cf. data/README.md).
 
-⚠️ Toutes les données affichées sont SYNTHÉTIQUES (cf. data/README.md).
-
-Structure (une page, charte AOSIS reprise de Pilotage_StoreItem) :
-  1. Scénario & périmètre (baseline vs baseline + IA météo)
-  2. Hypothèses mensuelles éditables (PV / PA / transactions / Δ inflation)
-     -> cascade PV × PA -> PM + inflation × transactions -> CA net
-  3. Calendrier promotionnel + saisie d'une campagne (uplift proposé, modifiable)
-  4. Prévision CA & atterrissage fin d'année (rolling forecast)
-  5. Besoin ETP par magasin (normes éditables)
-  6. Analyse d'écarts réel vs prévision (waterfall price/volume/mix/promo/calendaire)
+Barre latérale (persistante, s'applique à toutes les pages) : scénario + magasin.
+Pages :
+  🧭 Guide                      — à quoi sert l'outil, sur quoi reposent les données
+  💶 Combien va-t-on vendre ?   — prévision & chiffre d'affaires (+ hypothèses / promo)
+  🎯 Comment finira l'année ?   — atterrissage (rolling forecast)
+  👥 Besoin en personnel        — ETP par magasin
+  🔍 Écarts prévu / réel        — décomposition price/volume/mix/promo/calendaire
+  ⚙️ Ce qui pilote la prévision — explicabilité (importance des variables)
 
 Lancement :  streamlit run dashboard_simulation.py
-Pré-requis : python -m src.backtest --scenario N  et  python -m src.forecast --scenario N
+Pré-requis : python main.py  (backtest + prévision + écarts + explicabilité)
 """
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
 from src import config
-from src.cascade_ca import HYPOTHESIS_COLS, cascade as _cascade
+from src.cascade_ca import cascade as _cascade
 from src.cascade_ca import cascade_monthly as _cascade_monthly
 from src.cascade_ca import default_hypotheses
-from src.ecarts import EFFECT_COLS
 from src.etp import DEFAULT_PARAMS as ETP_DEFAULTS
 from src.etp import compute_etp as _compute_etp
 from src.simulation import apply_promo_to_forecast, propose_uplift, typology_uplift_reference
 
 # --------------------------------------------------------------------------- #
-# Charte AOSIS (reprise de Pilotage_StoreItem/dashboard_pilotage.py)
+# Charte graphique
 # --------------------------------------------------------------------------- #
 NAVY, ORANGE, OK, WARN = "#211948", "#E84E24", "#809C30", "#F99500"
 INK, INK_SOFT, MUTED, LINE, BG = "#1A1A1A", "#33404F", "#4B5563", "#E5E5E5", "#F2F2F7"
 SHADOW = "0 2px 8px rgba(0,0,0,0.30)"
 
-st.set_page_config(page_title="Prévision des ventes", layout="wide", page_icon="🐾")
+st.set_page_config(page_title="Prévision des ventes", layout="wide", page_icon="🐾",
+                   initial_sidebar_state="expanded")
 st.markdown(f"""
 <style>
   html, body, [class*="css"] {{ font-family: Arial, sans-serif; }}
   .stApp {{ background: {BG}; }}
   [data-testid="stToolbar"] {{ display: none; }}
-  header[data-testid="stHeader"] {{ background: transparent; height: 0; }}
   [data-testid="stWidgetLabel"] p {{ color: {INK} !important; font-weight: 700 !important; font-size: 13px !important; }}
   h1,h2,h3 {{ color: {INK}; font-weight: 700; }}
-  .hero {{ background:{NAVY}; border-radius:14px; padding:18px 26px; box-shadow:{SHADOW};
-           display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }}
-  .hero-t {{ color:#fff; font-size:21px; font-weight:700; }}
-  .hero-s {{ color:rgba(255,255,255,.82); font-size:12.5px; margin-top:4px; }}
-  .badge {{ background:{ORANGE}; color:#fff; font-size:11px; font-weight:700;
-            padding:4px 10px; border-radius:20px; }}
+  [data-testid="stSidebar"] {{ background: {NAVY}; }}
+  [data-testid="stSidebar"] * {{ color: #fff; }}
+  [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {{ color: rgba(255,255,255,.85) !important; }}
+  .ptitle {{ font-size:22px; font-weight:700; color:{INK}; margin:2px 0 2px; }}
+  .psub {{ font-size:13px; color:{INK_SOFT}; margin-bottom:4px; }}
+  .rule {{ height:3px; background:{ORANGE}; border-radius:2px; width:60px; margin:6px 0 16px; }}
+  .hero {{ background:{NAVY}; border-radius:14px; padding:20px 26px; box-shadow:{SHADOW};
+           margin-bottom:14px; }}
+  .hero-t {{ color:#fff; font-size:23px; font-weight:700; }}
+  .hero-s {{ color:rgba(255,255,255,.82); font-size:13px; margin-top:4px; }}
   .sec {{ font-size:11px; font-weight:700; color:{MUTED}; letter-spacing:.1em; text-transform:uppercase;
-          margin:26px 0 12px; padding-bottom:8px; border-bottom:2px solid {ORANGE}; }}
+          margin:22px 0 12px; padding-bottom:8px; border-bottom:2px solid {ORANGE}; }}
   .kpi {{ background:#fff; border-radius:12px; padding:14px 18px; box-shadow:{SHADOW}; }}
   .kpi-l {{ font-size:11.5px; color:{MUTED}; font-weight:700; text-transform:uppercase; }}
   .kpi-v {{ font-size:24px; color:{INK}; font-weight:700; margin-top:2px; }}
   .kpi-d {{ font-size:12px; margin-top:2px; }}
-  .expl {{ color:{INK_SOFT}; font-size:13px; line-height:1.55; margin:2px 0 14px; }}
+  .expl {{ background:#fff; border-radius:12px; padding:14px 18px; box-shadow:{SHADOW};
+           color:{INK_SOFT}; font-size:13px; line-height:1.6; margin:2px 0 16px; }}
+  .expl b {{ color:{INK}; }}
   .intro {{ background:#fff; border-radius:12px; padding:16px 20px; box-shadow:{SHADOW};
-            color:{INK_SOFT}; font-size:13px; line-height:1.65; margin-bottom:10px; }}
+            color:{INK_SOFT}; font-size:13px; line-height:1.65; margin-bottom:12px; }}
   .intro b {{ color:{INK}; }}
   .intro ol {{ margin:8px 0 10px; padding-left:22px; }}
   .intro li {{ margin-bottom:7px; }}
@@ -74,38 +75,27 @@ st.markdown(f"""
                   border-top:1px solid {LINE}; padding-top:8px; }}
   [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {{
       color:{INK_SOFT} !important; font-size:12.5px !important; }}
-
-  /* Champs de saisie (select, multi-select, date, texte, nombre) : fond blanc,
-     ressortent du fond gris de la page au lieu de s'y fondre. */
   div[data-baseweb="select"] > div, div[data-baseweb="input"] > div,
   div[data-testid="stDateInput"] input, div[data-testid="stNumberInput"] input,
   div[data-testid="stTextInput"] input,
   [data-testid="stSelectbox"] div:has(> input),
   [data-testid="stMultiSelect"] div:has(> input) {{
       background-color: #fff !important; border: 1px solid {LINE} !important; }}
-
-  /* Encart de saisie d'une campagne promo : carte blanche comme les KPI/graphes. */
   [data-testid="stForm"] {{
       background: #fff; border-radius: 12px; padding: 18px 20px 6px; box-shadow: {SHADOW}; }}
-
-  /* Panneau "Sur quoi reposent ces données ?" : carte blanche, même traitement. */
   [data-testid="stExpander"] {{
       background: #fff; border-radius: 12px; box-shadow: {SHADOW}; border: none; }}
   [data-testid="stExpander"] summary {{ border-radius: 12px; }}
-
-  /* Tableau d'hypothèses mensuelles : même traitement carte blanche. */
   [data-testid="stElementContainer"]:has([data-testid="stDataFrame"]) {{
       background: #fff; border-radius: 12px; padding: 4px; box-shadow: {SHADOW}; }}
-
-  /* Bouton "Appliquer la campagne" : gris neutre, pas la couleur d'accent orange. */
   [data-testid="stFormSubmitButton"] button {{
       background-color: {MUTED} !important; color: #fff !important; border: none !important; }}
-  [data-testid="stFormSubmitButton"] button:hover {{
-      background-color: {INK_SOFT} !important; }}
+  [data-testid="stFormSubmitButton"] button:hover {{ background-color: {INK_SOFT} !important; }}
 </style>
 """, unsafe_allow_html=True)
 
 BASE = Path(__file__).resolve().parent
+YEAR = pd.Timestamp(config.HIST_END).year
 
 
 # --------------------------------------------------------------------------- #
@@ -119,18 +109,26 @@ def load_static():
     return t, ref
 
 
+@st.cache_data
+def load_results(scenario: int):
+    r = {}
+    bt = config.RESULTS_DIR / "backtest" / f"scenario{scenario}"
+    fc = config.RESULTS_DIR / "forecast" / f"forecast_daily_scenario{scenario}.parquet"
+    r["summary"] = pd.read_csv(bt / "summary.csv") if (bt / "summary.csv").exists() else None
+    r["forecast"] = pd.read_parquet(fc) if fc.exists() else None
+    if r["forecast"] is not None:
+        r["forecast"]["date"] = pd.to_datetime(r["forecast"]["date"])
+    ec = config.RESULTS_DIR / "ecarts" / f"ecarts_scenario{scenario}.csv"
+    r["ecarts"] = pd.read_csv(ec) if ec.exists() else None
+    return r
+
+
 # Cache manuel léger (clé = id() des objets stables + signature bon marché des
-# hypothèses/paramètres), PAS st.cache_data : st.cache_data hacherait le
-# CONTENU complet des tables à chaque interaction (143 k lignes de prévision +
-# 1,36 M lignes d'historique + 130 k lignes horaires) sur CHAQUE re-exécution
-# du script, y compris quand rien de pertinent n'a changé — plus coûteux que
-# le calcul lui-même. id() est une comparaison quasi gratuite, valide ici car
-# TABLES/RES sont eux-mêmes des objets stables retournés par des fonctions
-# @st.cache_data (même référence tant que le scénario ne change pas).
+# hypothèses) : évite de recalculer la cascade (143 k lignes) et l'ETP (jointure
+# sur 130 k lignes) à chaque interaction, sans hacher tout le contenu comme le
+# ferait st.cache_data.
 def _hyp_signature(hyp_df):
-    if hyp_df is None:
-        return None
-    return tuple(map(tuple, hyp_df.itertuples(index=False)))
+    return None if hyp_df is None else tuple(map(tuple, hyp_df.itertuples(index=False)))
 
 
 def cascade_cached(forecast_df, sales_df, traffic_df, hyp_df):
@@ -157,365 +155,407 @@ def compute_etp_cached(casc_df, hourly_df, stores_df, params_tuple):
     return cache[key]
 
 
-@st.cache_data
-def load_results(scenario: int):
-    r = {}
-    bt = config.RESULTS_DIR / "backtest" / f"scenario{scenario}"
-    fc = config.RESULTS_DIR / "forecast" / f"forecast_daily_scenario{scenario}.parquet"
-    r["summary"] = pd.read_csv(bt / "summary.csv") if (bt / "summary.csv").exists() else None
-    r["by_store"] = pd.read_csv(bt / "by_store.csv") if (bt / "by_store.csv").exists() else None
-    r["forecast"] = pd.read_parquet(fc) if fc.exists() else None
-    if r["forecast"] is not None:
-        r["forecast"]["date"] = pd.to_datetime(r["forecast"]["date"])
-    ec = config.RESULTS_DIR / "ecarts" / f"ecarts_scenario{scenario}.csv"
-    r["ecarts"] = pd.read_csv(ec) if ec.exists() else None
-    return r
-
-
 TABLES, UPLIFT_REF = load_static()
 STORES = TABLES["stores"]
-YEAR = pd.Timestamp(config.HIST_END).year
+STORE_NAME = STORES.set_index("store_id").store_name
 
-st.markdown(f"""
-<div class="hero">
-  <div>
-    <div class="hero-t">Prévision des ventes</div>
-    <div class="hero-s">Profil Contrôleur de gestion (CDG) Ventes · prévision par magasin et par
-    référence, au jour · vue mensuelle · atterrissage fin {YEAR}</div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown(f"""
-<div class="intro">
-<div class="lead">À quoi sert cette page&nbsp;?</div>
-Elle aide à anticiper l'activité commerciale des magasins de l'enseigne. En descendant la page,
-elle répond à quatre questions, dans cet ordre&nbsp;:
-<ol>
-  <li><b>Combien va-t-on vendre&nbsp;?</b> À partir de 5 ans d'historique de ventes, l'outil prévoit
-      les ventes des 6 prochains mois — magasin par magasin, produit par produit — et les traduit
-      en chiffre d'affaires (le montant encaissé).</li>
-  <li><b>Comment va finir l'année&nbsp;?</b> Il additionne ce qui a déjà été vendu depuis janvier et
-      ce qu'il prévoit pour les mois restants, pour estimer le résultat de fin d'année
-      (ce qu'on appelle « l'atterrissage »).</li>
-  <li><b>De combien de vendeurs a-t-on besoin&nbsp;?</b> À partir des ventes prévues, il estime le
-      nombre de personnes nécessaires dans chaque magasin, heure par heure.</li>
-  <li><b>S'est-on trompé, et pourquoi&nbsp;?</b> Sur les mois déjà écoulés, il confronte ce qui avait
-      été prévu à ce qui a réellement été vendu, et explique d'où vient l'écart (prix, quantités,
-      promotions, jours fériés…).</li>
-</ol>
-<b>Deux scénarios de prévision</b> sont proposés en haut de page&nbsp;: le <b>scénario 1</b> s'appuie
-sur l'historique, le calendrier (week-ends, jours fériés) et les promotions&nbsp;; le <b>scénario 2</b>
-ajoute en plus l'effet de la météo.
-<div class="fine">
-<b>Comment s'en servir&nbsp;:</b> choisissez un scénario et un magasin tout en haut, puis faites
-défiler — chaque bloc se recalcule tout seul. Les champs que vous pouvez ajuster (hypothèses,
-campagne promo, règles de calcul du personnel) sont modifiables&nbsp;; le reste est calculé par l'outil.
-<br><b>Périmètre&nbsp;:</b> 12 magasins (villes françaises) + 1 canal Online · 60 produits en 8 familles ·
-5 ans d'historique quotidien.
-<br><b>Abréviations&nbsp;:</b> <b>CA</b> = chiffre d'affaires · <b>PV</b> = prix de vente ·
-<b>PA</b> = panier article (nombre d'articles par ticket) · <b>PM</b> = panier moyen (PV × PA) ·
-<b>SKU</b> = une référence produit · <b>ETP</b> = équivalent temps plein (1 = un salarié à temps complet) ·
-<b>WAPE</b> = erreur moyenne de la prévision, en&nbsp;% (plus c'est bas, plus la prévision est fiable).
-</div>
-</div>
-""", unsafe_allow_html=True)
 
 # --------------------------------------------------------------------------- #
-# 0 bis. Panneau repliable : sur quoi reposent les données de démonstration
+# Contexte partagé entre pages (scénario + magasin + hypothèses + promo simulée)
 # --------------------------------------------------------------------------- #
-with st.expander("📂 Sur quoi reposent ces données ? — hypothèses de la simulation "
-                 "(cliquer pour déplier)"):
+def store_label(s):
+    return "Réseau entier" if s == "Tous" else f"{s} — {STORE_NAME.get(s, s)}"
+
+
+def get_context(require_forecast=True):
+    """Charge les résultats du scénario courant et calcule la cascade CA en
+    tenant compte des hypothèses et de la campagne promo éventuellement saisies
+    (page « Combien va-t-on vendre ? »). Renvoie un dict, ou None si la prévision
+    n'a pas encore été générée."""
+    scenario = st.session_state.get("scenario", 1)
+    sel_store = st.session_state.get("sel_store", "Tous")
+    RES = load_results(scenario)
+    if require_forecast and RES["forecast"] is None:
+        return {"scenario": scenario, "sel_store": sel_store, "RES": RES, "missing": True}
+
+    ctx = {"scenario": scenario, "sel_store": sel_store, "RES": RES, "missing": False}
+    if RES["forecast"] is None:
+        return ctx
+
+    months = sorted(RES["forecast"]["date"].dt.to_period("M").astype(str).unique())
+    if "hyp" not in st.session_state or list(st.session_state.hyp.month) != months:
+        st.session_state.hyp = default_hypotheses(months)
+    hyp = st.session_state.hyp
+
+    # campagne promo : utilisée seulement si elle a été construite pour CE scénario
+    fc = RES["forecast"]
+    if st.session_state.get("fc_sim") is not None and st.session_state.get("fc_sim_scenario") == scenario:
+        fc = st.session_state.fc_sim
+
+    casc = cascade_cached(fc, TABLES["sales"], TABLES["traffic"], hyp)
+    casc_base = cascade_cached(RES["forecast"], TABLES["sales"], TABLES["traffic"], None)
+    if sel_store != "Tous":
+        casc_view = casc[casc.store_id == sel_store]
+        casc_base_view = casc_base[casc_base.store_id == sel_store]
+    else:
+        casc_view, casc_base_view = casc, casc_base
+
+    ctx.update(hyp=hyp, casc=casc, casc_view=casc_view, casc_base_view=casc_base_view,
+               months=months)
+    return ctx
+
+
+def page_header(title, subtitle):
+    st.markdown(f'<div class="ptitle">{title}</div>'
+                f'<div class="psub">{subtitle}</div><div class="rule"></div>',
+                unsafe_allow_html=True)
+
+
+def forecast_missing_stop(ctx):
+    st.error(f"La prévision du scénario {ctx['scenario']} n'a pas encore été générée. "
+             f"Lancer dans un terminal :  `python -m src.forecast --scenario {ctx['scenario']}` "
+             f"(ou `python main.py` pour tout produire).")
+    st.stop()
+
+
+# --------------------------------------------------------------------------- #
+# PAGE — Guide
+# --------------------------------------------------------------------------- #
+def page_guide():
+    st.markdown(f"""
+    <div class="hero">
+      <div class="hero-t">Prévision des ventes</div>
+      <div class="hero-s">Démonstrateur d'aide au pilotage commercial · profil Contrôleur de
+      gestion (CDG) Ventes · prévision par magasin et par produit, au jour · atterrissage fin {YEAR}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
     st.markdown("""
+    <div class="intro">
+    <div class="lead">À quoi sert cet outil&nbsp;?</div>
+    Il aide à anticiper l'activité commerciale des magasins de l'enseigne. Chaque page (menu de
+    gauche) répond à une question précise&nbsp;:
+    <ol>
+      <li><b>Combien va-t-on vendre&nbsp;?</b> À partir de 5 ans d'historique, il prévoit les ventes
+          des 6 prochains mois — magasin par magasin, produit par produit — et les traduit en
+          chiffre d'affaires (le montant encaissé).</li>
+      <li><b>Comment va finir l'année&nbsp;?</b> Il additionne ce qui a déjà été vendu et ce qu'il
+          prévoit pour les mois restants, pour estimer le résultat de fin d'année («&nbsp;l'atterrissage&nbsp;»).</li>
+      <li><b>De combien de vendeurs a-t-on besoin&nbsp;?</b> Il déduit des ventes prévues le nombre
+          de personnes nécessaires par magasin, heure par heure.</li>
+      <li><b>S'est-on trompé, et pourquoi&nbsp;?</b> Sur les mois passés, il confronte ce qui avait
+          été prévu à ce qui a réellement été vendu, et explique l'écart.</li>
+    </ol>
+    <b>Comment s'en servir&nbsp;:</b> en haut de la barre de gauche, choisissez un <b>scénario</b> et
+    un <b>magasin</b> — ces deux choix s'appliquent à toutes les pages. Puis naviguez d'une page à
+    l'autre. Le <b>scénario&nbsp;1</b> s'appuie sur l'historique, le calendrier et les promotions&nbsp;;
+    le <b>scénario&nbsp;2</b> ajoute l'effet de la météo.
+    <div class="fine">
+    <b>Périmètre&nbsp;:</b> 12 magasins (villes françaises) + 1 canal Online · 60 produits en 8 familles ·
+    5 ans d'historique quotidien.
+    <br><b>Abréviations&nbsp;:</b> <b>CA</b> = chiffre d'affaires · <b>PV</b> = prix de vente ·
+    <b>PA</b> = panier article (nombre d'articles par ticket) · <b>PM</b> = panier moyen (PV × PA) ·
+    <b>ETP</b> = équivalent temps plein (1 = un salarié à temps complet) ·
+    <b>WAPE</b> = erreur moyenne de la prévision, en&nbsp;% (plus c'est bas, plus la prévision est fiable).
+    </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    with st.expander("📂 Sur quoi reposent ces données ? — hypothèses de la simulation "
+                     "(cliquer pour déplier)"):
+        st.markdown("""
 #### Pourquoi des données simulées&nbsp;?
 Ce démonstrateur n'a pas encore accès aux vraies données de l'enseigne. **Toutes les données
-affichées sont fabriquées par ordinateur**, uniquement pour montrer comment l'outil fonctionne
-de bout en bout. ⚠️ Les montants n'ont **aucune valeur réelle** : ils ne doivent pas être lus
-comme de vrais chiffres d'affaires.
+affichées sont fabriquées par ordinateur**, uniquement pour montrer comment l'outil fonctionne.
+⚠️ Les montants n'ont **aucune valeur réelle** : ils ne doivent pas être lus comme de vrais
+chiffres d'affaires.
 
 #### Ce que représentent les données
 - **12 magasins = 12 vraies villes françaises.** La taille de la ville fixe la taille du magasin
   (Paris = grand, Brive = petit).
-- **1 magasin « Online »** pour le canal e-commerce (traité comme un magasin à part entière).
-- **60 produits d'animalerie** répartis en 8 familles (chien, chat, oiseau, aquariophilie,
-  rongeur, reptile, hygiène & soins, accessoires & jouets). 4 de ces produits sont « lancés »
-  en cours de période, pour tester le cas des nouveautés sans historique.
+- **1 magasin « Online »** pour le canal e-commerce.
+- **60 produits d'animalerie** en 8 familles (chien, chat, oiseau, aquariophilie, rongeur,
+  reptile, hygiène & soins, accessoires & jouets), dont 4 « lancés » en cours de période.
 - **5 ans de ventes quotidiennes** (mi-2021 à mi-2026), pour chaque magasin et chaque produit.
 
 #### Ce qu'on a volontairement caché dans les données (et que l'outil doit retrouver seul)
-C'est le vrai test du démonstrateur : on injecte des comportements réalistes dans les données,
-puis on vérifie que le moteur de prévision les **redécouvre tout seul**, sans qu'on les lui dise.
-- **Rythmes saisonniers** : pic du samedi en magasin, et ventes qui suivent les saisons
-  (antiparasitaires l'été, oiseaux l'hiver, jouets à Noël).
-- **Jours fériés et fêtes** : fermetures, affluence de décembre.
-- **Tendances de fond** : le canal Online grandit (~+14 %/an), un magasin est en léger déclin.
-- **Inflation des prix**, calquée sur l'inflation réelle de 2021-2023.
-- **6 types de promotions**, chacun avec son effet propre : une remise produit crée un pic de
-  ventes suivi d'un creux&nbsp;; une opération avec un influenceur a un effet décalé d'environ un
-  mois&nbsp;; une promo à seuil fait monter le nombre d'articles par panier&nbsp;; etc.
-- **Effet météo** : une canicule fait baisser le passage en magasin mais monter les commandes
-  en ligne, dope les antiparasitaires&nbsp;; une vague de froid dope le rayon oiseaux.
-- **Réalisme du terrain** : quelques ruptures de stock (~1 % des cas, où la vente est bridée
-  faute de produit) et beaucoup de produits qui ne se vendent pas tous les jours
-  (~45 % de journées sans vente, typique de l'équipement).
+C'est le vrai test : on injecte des comportements réalistes, puis on vérifie que le moteur les
+**redécouvre tout seul**.
+- **Rythmes saisonniers** : pic du samedi, ventes qui suivent les saisons (antiparasitaires l'été,
+  oiseaux l'hiver, jouets à Noël).
+- **Jours fériés et fêtes**, **tendances de fond** (l'Online grandit ~+14 %/an), **inflation** des
+  prix calquée sur 2021-2023.
+- **6 types de promotions**, chacun avec son effet propre (une remise crée un pic puis un creux&nbsp;;
+  une opération influenceur a un effet décalé d'environ un mois&nbsp;; etc.).
+- **Effet météo**, **ruptures de stock** (~1 % des cas) et **produits qui ne se vendent pas tous les
+  jours** (~45 % de journées sans vente).
 
 #### La seule donnée réelle&nbsp;: la météo
-Pour que le scénario 2 ait un vrai signal à apprendre, on a utilisé la **vraie météo historique**
-des 12 villes (source Open-Meteo), récupérée une seule fois puis figée dans le projet. Tout le
-reste est simulé. *(L'ampleur de l'effet météo a été volontairement accentuée pour qu'elle soit
-détectable à cette échelle&nbsp;; son poids réel devra être mesuré sur de vraies données.)*
+On a utilisé la **vraie météo historique** des 12 villes (source Open-Meteo), figée dans le projet,
+pour que le scénario 2 ait un vrai signal à apprendre. *(Son effet a été volontairement accentué
+pour être détectable&nbsp;; son poids réel devra être mesuré sur de vraies données.)*
 
 #### Garde-fou
-À chaque génération, **13 vérifications automatiques** s'assurent que les données restent
-cohérentes (les totaux heure par heure collent aux totaux du jour, les promotions ont bien un
-effet visible, etc.). Si une vérification échoue, les données ne sont pas produites.
+À chaque génération, **13 vérifications automatiques** s'assurent que les données restent cohérentes.
 """)
 
-# --------------------------------------------------------------------------- #
-# 1. Scénario & périmètre
-# --------------------------------------------------------------------------- #
-c1, c2, _ = st.columns([2.8, 1.4, 1.8])
-scenario = c1.radio("Scénario de prévision",
-                    [1, 2], horizontal=True,
-                    format_func=lambda s: "1 — Base (calendrier + promos)" if s == 1
-                    else "2 — Base + météo")
-sel_store = c2.selectbox("Magasin", ["Tous"] + STORES.store_id.tolist(),
-                         format_func=lambda s: "Réseau entier" if s == "Tous"
-                         else f"{s} — {STORES.set_index('store_id').store_name.get(s, s)}")
-st.markdown('<div class="expl">Choisissez un scénario de prévision et, si besoin, un magasin '
-            '(par défaut : tout le réseau). Le scénario 2 ajoute l\'effet de la météo à la base '
-            'calendrier + promotions du scénario 1. Tous les écrans ci-dessous se recalculent '
-            'selon ces deux choix.</div>', unsafe_allow_html=True)
+    st.markdown(f"""<div class="expl" style="margin-top:14px">
+    <b>Méthode d'évaluation.</b> La fiabilité affichée (WAPE) est mesurée par un «&nbsp;backtest à
+    origine glissante&nbsp;» : {config.BACKTEST_N_FOLDS} passages de {config.BACKTEST_HORIZON_DAYS}
+    jours où l'on prévoit une période déjà connue, puis on compare à la réalité — le tout comparé à
+    une prévision naïve (répéter la semaine précédente) que l'outil doit battre. Hypothèses de
+    travail encore à caler avec le métier&nbsp;: définitions EB/PA, normes de productivité ETP,
+    projection du panier article, écart d'inflation. <b>Données illustratives</b> (détail dans le README).
+    </div>""", unsafe_allow_html=True)
 
-RES = load_results(scenario)
-if RES["forecast"] is None:
-    st.error(f"Prévision du scénario {scenario} absente. Lancer :  "
-             f"`python -m src.forecast --scenario {scenario}`")
-    st.stop()
 
 # --------------------------------------------------------------------------- #
-# 2. Hypothèses mensuelles + simulation promo -> cascade
+# PAGE — Combien va-t-on vendre ? (prévision & CA + hypothèses/promo)
 # --------------------------------------------------------------------------- #
-st.markdown('<div class="sec">Ajuster les hypothèses (facultatif)</div>',
-            unsafe_allow_html=True)
-st.markdown('<div class="expl">Cette zone est optionnelle : par défaut, l\'outil utilise ses propres '
-            'hypothèses et vous pouvez descendre directement aux résultats. Si vous voulez tester une '
-            'variante (« et si les prix montaient de 2 %&nbsp;? »), ajustez les valeurs mois par mois. '
-            'Les nombres sont des <b>multiplicateurs</b> : 1,00 = inchangé, 1,02 = +2 %. Le chiffre '
-            'd\'affaires se recalcule alors selon l\'enchaînement&nbsp;: prix de vente × nombre '
-            'd\'articles par panier = panier moyen, puis panier moyen × nombre de tickets = chiffre '
-            'd\'affaires. À gauche, les hypothèses générales&nbsp;; à droite, une campagne '
-            'promotionnelle à simuler.</div>',
-            unsafe_allow_html=True)
-months = sorted(RES["forecast"]["date"].dt.to_period("M").astype(str).unique())
-if "hyp" not in st.session_state or list(st.session_state.hyp.month) != months:
-    st.session_state.hyp = default_hypotheses(months)
+def page_ca():
+    ctx = get_context()
+    page_header("Combien va-t-on vendre&nbsp;?",
+                f"Chiffre d'affaires attendu sur le 2ᵉ semestre {YEAR} — "
+                f"{store_label(ctx['sel_store'])} · scénario {ctx['scenario']}")
+    if ctx["missing"]:
+        forecast_missing_stop(ctx)
 
-hcol, pcol = st.columns([1.15, 1])
-with hcol:
-    st.caption("Coefficients multiplicateurs appliqués aux valeurs proposées par l'outil "
-               "(1,00 = inchangé). « Δ inflation » = point d'inflation ajouté ou retiré par rapport "
-               "à la trajectoire déjà intégrée aux prix 🟡.")
-    hyp = st.data_editor(
-        st.session_state.hyp, hide_index=True, use_container_width=True,
-        column_config={
-            "month": st.column_config.TextColumn("Mois", disabled=True),
-            "coef_pv": st.column_config.NumberColumn("PV ×", min_value=0.5, max_value=1.5, step=0.01),
-            "coef_pa": st.column_config.NumberColumn("PA ×", min_value=0.5, max_value=1.5, step=0.01),
-            "coef_transactions": st.column_config.NumberColumn("Transactions ×", min_value=0.5,
-                                                               max_value=1.5, step=0.01),
-            "inflation_delta_pct": st.column_config.NumberColumn("Δ inflation %", min_value=-5.0,
-                                                                 max_value=5.0, step=0.1),
-        })
+    st.markdown('<div class="expl">Le <b>CA net simulé</b> tient compte de vos éventuels ajustements '
+                '(ci-dessous, facultatifs)&nbsp;; la <b>proposition de l\'outil</b> est la prévision '
+                'sans ajustement, pour comparaison. La <b>fiabilité (WAPE)</b> indique la qualité de '
+                'la prévision, mesurée sur le passé — plus le pourcentage est bas, mieux c\'est. '
+                'Le graphique montre le CA prévu mois par mois (barres) face à la proposition de '
+                'l\'outil (ligne orange).</div>', unsafe_allow_html=True)
 
-with pcol:
-    st.caption("Saisie d'une campagne promotionnelle (brief 1.2) — l'outil propose un uplift "
-               "issu de l'historique, modifiable avant application.")
-    with st.form("promo_form"):
-        f1, f2 = st.columns(2)
-        p_name = f1.text_input("Nom de campagne", "Ma campagne test")
-        p_type = f2.selectbox("Typologie", config.PROMO_TYPES)
-        f3, f4, f5 = st.columns(3)
-        p_start = f3.date_input("Début", pd.Timestamp(f"{YEAR}-10-01"),
-                                min_value=pd.Timestamp(config.HIST_END) + pd.Timedelta(days=1),
-                                max_value=pd.Timestamp(config.FORECAST_END))
-        p_end = f4.date_input("Fin", pd.Timestamp(f"{YEAR}-10-14"),
-                              min_value=pd.Timestamp(config.HIST_END) + pd.Timedelta(days=1),
-                              max_value=pd.Timestamp(config.FORECAST_END))
-        p_perim = f5.selectbox("Périmètre", ["omnicanal", "magasin", "online"])
-        p_disc = st.slider("Niveau de remise (pour une promo de type 'produits')", 0.0, 0.5, 0.20, 0.05)
-        p_cat = st.multiselect("Catégories ciblées",
-                               sorted(TABLES["products"].commodity_group.unique()),
-                               default=["Chien"])
-        proposed = propose_uplift(UPLIFT_REF, p_type, p_disc)
-        p_uplift = st.slider(f"Hausse des ventes attendue (proposée par l'outil : ×{proposed})",
-                             0.8, 3.0, float(proposed), 0.05)
-        p_apply = st.form_submit_button("Appliquer la campagne au scénario")
+    cv, cbv = ctx["casc_view"], ctx["casc_base_view"]
+    ca_scn, ca_ref = cv.ca_net.sum(), cbv.ca_net.sum()
+    delta = ca_scn / ca_ref - 1 if ca_ref else 0
+    wape_txt, wape_main = "—", "—"
+    if ctx["RES"]["summary"] is not None:
+        s = ctx["RES"]["summary"]
+        wh = s.loc[s.modele == "hybride", "WAPE"].iloc[0]
+        wn = s.loc[s.modele == "naive_saiso", "WAPE"].iloc[0]
+        wape_main, wape_txt = f"{wh:.1%}", f"{wh:.1%} · naïve {wn:.1%}"
 
-fc = RES["forecast"]
-if p_apply:
-    skus = TABLES["products"].loc[
-        TABLES["products"].commodity_group.isin(p_cat), "sku_id"].tolist()
-    fc = apply_promo_to_forecast(fc, promo_type=p_type, date_start=p_start, date_end=p_end,
-                                 perimeter=p_perim, sku_ids=skus, uplift=p_uplift,
-                                 discount_rate=p_disc if p_type == "produits" else 0.0)
-    st.session_state.fc_sim = fc
-    st.session_state.promo_name = p_name
-elif "fc_sim" in st.session_state:
-    fc = st.session_state.fc_sim
+    k1, k2, k3, k4 = st.columns(4)
+    k1.markdown(f'<div class="kpi"><div class="kpi-l">CA net simulé — S2 {YEAR}</div>'
+                f'<div class="kpi-v">{ca_scn/1e6:,.2f} M€</div>'
+                f'<div class="kpi-d" style="color:{OK if delta>=0 else ORANGE}">'
+                f'{delta:+.1%} vs proposition outil</div></div>', unsafe_allow_html=True)
+    k2.markdown(f'<div class="kpi"><div class="kpi-l">Proposition de l\'outil</div>'
+                f'<div class="kpi-v">{ca_ref/1e6:,.2f} M€</div>'
+                f'<div class="kpi-d" style="color:{MUTED}">hypothèses neutres</div></div>',
+                unsafe_allow_html=True)
+    k3.markdown(f'<div class="kpi"><div class="kpi-l">Fiabilité (WAPE)</div>'
+                f'<div class="kpi-v">{wape_main}</div>'
+                f'<div class="kpi-d" style="color:{MUTED}">{wape_txt}</div></div>',
+                unsafe_allow_html=True)
+    k4.markdown(f'<div class="kpi"><div class="kpi-l">Transactions prévues</div>'
+                f'<div class="kpi-v">{cv.transactions.sum()/1e3:,.0f} k</div>'
+                f'<div class="kpi-d" style="color:{MUTED}">panier moyen '
+                f'{cv.ca_net.sum()/max(cv.transactions.sum(),1):,.1f} €</div></div>',
+                unsafe_allow_html=True)
 
-# cascade sur la prévision (éventuellement modifiée) — mise en cache (voir cascade_cached)
-casc = cascade_cached(fc, TABLES["sales"], TABLES["traffic"], hyp)
-casc_base = cascade_cached(RES["forecast"], TABLES["sales"], TABLES["traffic"], None)
-if sel_store != "Tous":
-    casc_view, casc_base_view = casc[casc.store_id == sel_store], casc_base[casc_base.store_id == sel_store]
-else:
-    casc_view, casc_base_view = casc, casc_base
+    mm = cascade_monthly_cached(cv)
+    mm_base = cascade_monthly_cached(cbv)
+    mfig = go.Figure()
+    mfig.add_bar(x=mm.groupby("month").ca_net.sum().index,
+                 y=mm.groupby("month").ca_net.sum().values, name="CA net simulé", marker_color=NAVY)
+    mfig.add_scatter(x=mm_base.groupby("month").ca_net.sum().index,
+                     y=mm_base.groupby("month").ca_net.sum().values, name="Proposition de l'outil",
+                     mode="lines+markers", line=dict(color=ORANGE, width=3))
+    mfig.update_layout(height=340, margin=dict(l=10, r=10, t=30, b=10), plot_bgcolor="#fff",
+                       paper_bgcolor="rgba(0,0,0,0)", legend=dict(orientation="h"))
+    st.plotly_chart(mfig, use_container_width=True)
 
-# --------------------------------------------------------------------------- #
-# 3. KPI + courbe CA net
-# --------------------------------------------------------------------------- #
-st.markdown(f'<div class="sec">Combien va-t-on vendre ? — 2ᵉ semestre {YEAR} '
-            f'({ "réseau entier" if sel_store == "Tous" else sel_store })</div>',
-            unsafe_allow_html=True)
-st.markdown('<div class="expl">Chiffre d\'affaires attendu sur les 6 derniers mois de l\'année. '
-            'Le premier chiffre tient compte de vos éventuels ajustements&nbsp;; le second est la '
-            'proposition de l\'outil sans ajustement, pour comparaison. Le <b>WAPE</b> dit à quel '
-            'point la prévision est fiable, mesuré sur le passé (plus le pourcentage est bas, mieux '
-            'c\'est&nbsp;; la « naïve » est une prévision basique que l\'outil doit battre pour être '
-            'utile). Sur le graphique&nbsp;: les barres montrent le CA prévu mois par mois, la ligne '
-            'orange rappelle la proposition de l\'outil.</div>', unsafe_allow_html=True)
-ca_scn, ca_ref = casc_view.ca_net.sum(), casc_base_view.ca_net.sum()
-delta = ca_scn / ca_ref - 1 if ca_ref else 0
-wape_txt = "—"
-if RES["summary"] is not None:
-    s = RES["summary"]
-    wh = s.loc[s.modele == "hybride", "WAPE"].iloc[0]
-    wn = s.loc[s.modele == "naive_saiso", "WAPE"].iloc[0]
-    wape_txt = f"{wh:.1%} (naïve {wn:.1%})"
+    # ------ contrôles facultatifs, repliés par défaut pour garder la page nette ------
+    with st.expander("🎛️ Tester des hypothèses ou une promotion (facultatif)"):
+        st.markdown('<div class="expl" style="box-shadow:none;padding:0 0 10px">Par défaut, l\'outil '
+                    'utilise ses propres hypothèses. Ici, vous pouvez tester une variante — les '
+                    'valeurs sont des <b>multiplicateurs</b> (1,00 = inchangé, 1,02 = +2 %). '
+                    'Le CA et l\'atterrissage se recalculent partout.</div>', unsafe_allow_html=True)
+        hcol, pcol = st.columns([1.15, 1])
+        with hcol:
+            st.caption("Hypothèses mois par mois. « Δ inflation » = point d'inflation ajouté/retiré "
+                       "par rapport à la trajectoire déjà intégrée aux prix.")
+            hyp = st.data_editor(
+                st.session_state.hyp, hide_index=True, use_container_width=True,
+                column_config={
+                    "month": st.column_config.TextColumn("Mois", disabled=True),
+                    "coef_pv": st.column_config.NumberColumn("PV ×", min_value=0.5, max_value=1.5, step=0.01),
+                    "coef_pa": st.column_config.NumberColumn("PA ×", min_value=0.5, max_value=1.5, step=0.01),
+                    "coef_transactions": st.column_config.NumberColumn("Transactions ×", min_value=0.5,
+                                                                       max_value=1.5, step=0.01),
+                    "inflation_delta_pct": st.column_config.NumberColumn("Δ inflation %", min_value=-5.0,
+                                                                         max_value=5.0, step=0.1),
+                })
+            st.session_state.hyp = hyp
+        with pcol:
+            st.caption("Simuler une campagne promotionnelle : l'outil propose une hausse des ventes "
+                       "issue de l'historique, modifiable avant application.")
+            with st.form("promo_form"):
+                f1, f2 = st.columns(2)
+                p_name = f1.text_input("Nom de campagne", "Ma campagne test")
+                p_type = f2.selectbox("Type de promotion", config.PROMO_TYPES)
+                f3, f4, f5 = st.columns(3)
+                p_start = f3.date_input("Début", pd.Timestamp(f"{YEAR}-10-01"),
+                                        min_value=pd.Timestamp(config.HIST_END) + pd.Timedelta(days=1),
+                                        max_value=pd.Timestamp(config.FORECAST_END))
+                p_end = f4.date_input("Fin", pd.Timestamp(f"{YEAR}-10-14"),
+                                      min_value=pd.Timestamp(config.HIST_END) + pd.Timedelta(days=1),
+                                      max_value=pd.Timestamp(config.FORECAST_END))
+                p_perim = f5.selectbox("Périmètre", ["omnicanal", "magasin", "online"])
+                p_disc = st.slider("Niveau de remise (pour une promo de type 'produits')", 0.0, 0.5, 0.20, 0.05)
+                p_cat = st.multiselect("Familles ciblées",
+                                       sorted(TABLES["products"].commodity_group.unique()),
+                                       default=["Chien"])
+                proposed = propose_uplift(UPLIFT_REF, p_type, p_disc)
+                p_uplift = st.slider(f"Hausse des ventes attendue (proposée par l'outil : ×{proposed})",
+                                     0.8, 3.0, float(proposed), 0.05)
+                p_apply = st.form_submit_button("Appliquer la campagne")
+        if p_apply:
+            skus = TABLES["products"].loc[
+                TABLES["products"].commodity_group.isin(p_cat), "sku_id"].tolist()
+            st.session_state.fc_sim = apply_promo_to_forecast(
+                ctx["RES"]["forecast"], promo_type=p_type, date_start=p_start, date_end=p_end,
+                perimeter=p_perim, sku_ids=skus, uplift=p_uplift,
+                discount_rate=p_disc if p_type == "produits" else 0.0)
+            st.session_state.fc_sim_scenario = ctx["scenario"]
+            st.session_state.promo_name = p_name
+            st.rerun()
+        if st.session_state.get("fc_sim") is not None and \
+                st.session_state.get("fc_sim_scenario") == ctx["scenario"]:
+            c1b, c2b = st.columns([3, 1])
+            c1b.success(f"Campagne « {st.session_state.get('promo_name', '')} » appliquée.")
+            if c2b.button("Retirer la campagne"):
+                st.session_state.fc_sim = None
+                st.rerun()
 
-k1, k2, k3, k4 = st.columns(4)
-k1.markdown(f'<div class="kpi"><div class="kpi-l">CA net simulé S2 {YEAR}</div>'
-            f'<div class="kpi-v">{ca_scn/1e6:,.2f} M€</div>'
-            f'<div class="kpi-d" style="color:{OK if delta>=0 else ORANGE}">'
-            f'{delta:+.1%} vs proposition outil</div></div>', unsafe_allow_html=True)
-k2.markdown(f'<div class="kpi"><div class="kpi-l">Proposition outil (hypothèses neutres)</div>'
-            f'<div class="kpi-v">{ca_ref/1e6:,.2f} M€</div>'
-            f'<div class="kpi-d" style="color:{MUTED}">scénario {scenario}</div></div>',
-            unsafe_allow_html=True)
-k3.markdown(f'<div class="kpi"><div class="kpi-l">Fiabilité prévision (WAPE)</div>'
-            f'<div class="kpi-v">{wape_txt.split(" ")[0]}</div>'
-            f'<div class="kpi-d" style="color:{MUTED}">{wape_txt}</div></div>',
-            unsafe_allow_html=True)
-k4.markdown(f'<div class="kpi"><div class="kpi-l">Transactions prévues S2</div>'
-            f'<div class="kpi-v">{casc_view.transactions.sum()/1e3:,.0f} k</div>'
-            f'<div class="kpi-d" style="color:{MUTED}">PM moyen '
-            f'{casc_view.ca_net.sum()/max(casc_view.transactions.sum(),1):,.1f} €</div></div>',
-            unsafe_allow_html=True)
-
-mm = cascade_monthly_cached(casc_view)
-mm_base = cascade_monthly_cached(casc_base_view)
-mfig = go.Figure()
-mfig.add_bar(x=mm.groupby("month").ca_net.sum().index,
-             y=mm.groupby("month").ca_net.sum().values, name="CA net simulé",
-             marker_color=NAVY)
-mfig.add_scatter(x=mm_base.groupby("month").ca_net.sum().index,
-                 y=mm_base.groupby("month").ca_net.sum().values,
-                 name="Proposition outil", mode="lines+markers", line=dict(color=ORANGE, width=3))
-mfig.update_layout(height=320, margin=dict(l=10, r=10, t=30, b=10), plot_bgcolor="#fff",
-                   paper_bgcolor="rgba(0,0,0,0)", legend=dict(orientation="h"))
-st.plotly_chart(mfig, use_container_width=True)
 
 # --------------------------------------------------------------------------- #
-# 4. Atterrissage fin d'année (rolling forecast)
+# PAGE — Comment finira l'année ? (atterrissage)
 # --------------------------------------------------------------------------- #
-st.markdown(f'<div class="sec">Comment va finir l\'année ? — atterrissage {YEAR}</div>',
-            unsafe_allow_html=True)
-st.markdown('<div class="expl">Estimation du résultat de fin d\'année : on additionne ce qui a déjà '
-            'été vendu de janvier à juin (barres vertes) et ce qui est prévu de juillet à décembre '
-            '(barres bleues). Le total est l\'« atterrissage » — la meilleure estimation actuelle de '
-            'ce que fera l\'année entière. Elle se précise chaque mois, au fur et à mesure que du réel '
-            'remplace du prévisionnel.</div>', unsafe_allow_html=True)
-sales = TABLES["sales"]
-reel = sales[sales.date.dt.year == YEAR]
-if sel_store != "Tous":
-    reel = reel[reel.store_id == sel_store]
-reel_m = reel.assign(month=reel.date.dt.to_period("M").astype(str)).groupby("month").revenue.sum()
-prev_m = mm.groupby("month").ca_net.sum()
-att = pd.concat([reel_m.rename("CA"), prev_m.rename("CA")])
-afig = go.Figure()
-afig.add_bar(x=reel_m.index, y=reel_m.values, name="Réel (janv-juin)", marker_color=OK)
-afig.add_bar(x=prev_m.index, y=prev_m.values, name="Prévision (juil-déc)", marker_color=NAVY)
-afig.update_layout(height=300, margin=dict(l=10, r=10, t=30, b=10), plot_bgcolor="#fff",
-                   paper_bgcolor="rgba(0,0,0,0)", legend=dict(orientation="h"))
-st.plotly_chart(afig, use_container_width=True)
-st.markdown(f"**Atterrissage {YEAR} : {(reel_m.sum() + prev_m.sum())/1e6:,.2f} M€** "
-            f"(réel S1 {reel_m.sum()/1e6:,.2f} M€ + prévision S2 {prev_m.sum()/1e6:,.2f} M€)")
+def page_atterrissage():
+    ctx = get_context()
+    page_header(f"Comment va finir l'année&nbsp;? — atterrissage {YEAR}",
+                f"{store_label(ctx['sel_store'])} · scénario {ctx['scenario']}")
+    if ctx["missing"]:
+        forecast_missing_stop(ctx)
+
+    st.markdown('<div class="expl">On additionne ce qui a <b>déjà été vendu</b> de janvier à juin '
+                '(barres vertes) et ce qui est <b>prévu</b> de juillet à décembre (barres bleues). '
+                'Le total est l\'« atterrissage »&nbsp;: la meilleure estimation actuelle du résultat '
+                'de l\'année entière. Elle se précise chaque mois, à mesure que du réel remplace du '
+                'prévisionnel.</div>', unsafe_allow_html=True)
+
+    mm = cascade_monthly_cached(ctx["casc_view"])
+    sales = TABLES["sales"]
+    reel = sales[sales.date.dt.year == YEAR]
+    if ctx["sel_store"] != "Tous":
+        reel = reel[reel.store_id == ctx["sel_store"]]
+    reel_m = reel.assign(month=reel.date.dt.to_period("M").astype(str)).groupby("month").revenue.sum()
+    prev_m = mm.groupby("month").ca_net.sum()
+
+    total = (reel_m.sum() + prev_m.sum()) / 1e6
+    k1, k2, k3 = st.columns(3)
+    k1.markdown(f'<div class="kpi"><div class="kpi-l">Atterrissage {YEAR}</div>'
+                f'<div class="kpi-v">{total:,.2f} M€</div>'
+                f'<div class="kpi-d" style="color:{MUTED}">année entière estimée</div></div>',
+                unsafe_allow_html=True)
+    k2.markdown(f'<div class="kpi"><div class="kpi-l">Déjà réalisé (janv–juin)</div>'
+                f'<div class="kpi-v">{reel_m.sum()/1e6:,.2f} M€</div>'
+                f'<div class="kpi-d" style="color:{OK}">observé</div></div>', unsafe_allow_html=True)
+    k3.markdown(f'<div class="kpi"><div class="kpi-l">Reste à faire (juil–déc)</div>'
+                f'<div class="kpi-v">{prev_m.sum()/1e6:,.2f} M€</div>'
+                f'<div class="kpi-d" style="color:{MUTED}">prévu</div></div>', unsafe_allow_html=True)
+
+    afig = go.Figure()
+    afig.add_bar(x=reel_m.index, y=reel_m.values, name="Réel (janv–juin)", marker_color=OK)
+    afig.add_bar(x=prev_m.index, y=prev_m.values, name="Prévision (juil–déc)", marker_color=NAVY)
+    afig.update_layout(height=340, margin=dict(l=10, r=10, t=30, b=10), plot_bgcolor="#fff",
+                       paper_bgcolor="rgba(0,0,0,0)", legend=dict(orientation="h"))
+    st.plotly_chart(afig, use_container_width=True)
+
 
 # --------------------------------------------------------------------------- #
-# 5. Besoin ETP (Bloc C — interne seul)
+# PAGE — Besoin en personnel (ETP)
 # --------------------------------------------------------------------------- #
-st.markdown('<div class="sec">De combien de vendeurs a-t-on besoin ? — effectif par magasin</div>',
-            unsafe_allow_html=True)
-st.markdown('<div class="expl">On traduit les ventes prévues en nombre de personnes. À partir du '
-            'chiffre d\'affaires et de la fréquentation attendus heure par heure, et des horaires '
-            'd\'ouverture, l\'outil estime l\'effectif nécessaire dans chaque magasin — exprimé en '
-            '<b>ETP</b> (équivalent temps plein : 1 = un salarié à temps complet). Les règles de '
-            'calcul ci-dessous (par ex. « combien de CA une personne gère par heure ») sont des '
-            'valeurs de travail, à caler avec le métier. Le canal Online est exclu (pas de magasin '
-            'physique). Le second graphique montre une journée type (un samedi) et sert à répartir '
-            'les équipes heure par heure.</div>', unsafe_allow_html=True)
-e1, e2, e3, e4 = st.columns(4)
-p_ca = e1.number_input("€ CA / heure-vendeur 🟡", 100.0, 500.0, float(ETP_DEFAULTS["prod_ca_per_hour"]), 10.0)
-p_tk = e2.number_input("Tickets / heure-vendeur 🟡", 5.0, 30.0, float(ETP_DEFAULTS["tickets_per_hour"]), 1.0)
-p_min = e3.number_input("Effectif minimum / h 🟡", 1.0, 5.0, float(ETP_DEFAULTS["min_staff"]), 0.5)
-p_hm = e4.number_input("Heures / mois / ETP", 100.0, 200.0, float(ETP_DEFAULTS["hours_per_month"]), 0.01)
+def page_etp():
+    ctx = get_context()
+    page_header("De combien de vendeurs a-t-on besoin&nbsp;?",
+                f"Effectif estimé par magasin (2ᵉ semestre {YEAR}) · scénario {ctx['scenario']}")
+    if ctx["missing"]:
+        forecast_missing_stop(ctx)
 
-_etp_params = (("prod_ca_per_hour", p_ca), ("tickets_per_hour", p_tk),
-               ("min_staff", p_min), ("hours_per_month", p_hm))
-etp_hourly, etp_daily, etp_monthly = compute_etp_cached(
-    casc, TABLES["hourly"], STORES, _etp_params)
-etp_avg = etp_monthly.groupby("store_id").etp.mean().sort_values(ascending=False)
-efig = go.Figure(go.Bar(x=etp_avg.index, y=etp_avg.values, marker_color=NAVY,
-                        text=etp_avg.round(1), textposition="outside"))
-efig.update_layout(height=300, margin=dict(l=10, r=10, t=30, b=10), plot_bgcolor="#fff",
-                   paper_bgcolor="rgba(0,0,0,0)",
-                   yaxis_title=f"ETP moyen / mois (S2 {YEAR})")
-st.plotly_chart(efig, use_container_width=True)
+    st.markdown('<div class="expl">On traduit les ventes prévues en <b>nombre de personnes</b>. '
+                'À partir du chiffre d\'affaires et de la fréquentation attendus heure par heure, et '
+                'des horaires d\'ouverture, l\'outil estime l\'effectif nécessaire par magasin, en '
+                '<b>ETP</b> (1 = un salarié à temps complet). Les règles de calcul ci-dessous sont '
+                'des valeurs de travail, à caler avec le métier. Le canal Online est exclu (pas de '
+                'magasin physique).</div>', unsafe_allow_html=True)
 
-etp_store = sel_store if sel_store != "Tous" else etp_avg.index[0]
-day_prof = (etp_hourly[etp_hourly.store_id == etp_store]
-            .assign(dow=lambda d: pd.to_datetime(d.date).dt.dayofweek)
-            .query("dow == 5").groupby("hour").staff.mean())
-pfig = go.Figure(go.Scatter(x=day_prof.index, y=day_prof.values, fill="tozeroy",
-                            line=dict(color=ORANGE, width=3)))
-pfig.update_layout(height=240, margin=dict(l=10, r=10, t=40, b=10), plot_bgcolor="#fff",
-                   paper_bgcolor="rgba(0,0,0,0)",
-                   title=f"Courbe de staffing type — samedi, {etp_store}",
-                   xaxis_title="heure", yaxis_title="personnes")
-st.plotly_chart(pfig, use_container_width=True)
+    e1, e2, e3, e4 = st.columns(4)
+    p_ca = e1.number_input("€ CA / heure-vendeur 🟡", 100.0, 500.0, float(ETP_DEFAULTS["prod_ca_per_hour"]), 10.0)
+    p_tk = e2.number_input("Tickets / heure-vendeur 🟡", 5.0, 30.0, float(ETP_DEFAULTS["tickets_per_hour"]), 1.0)
+    p_min = e3.number_input("Effectif minimum / h 🟡", 1.0, 5.0, float(ETP_DEFAULTS["min_staff"]), 0.5)
+    p_hm = e4.number_input("Heures / mois / ETP", 100.0, 200.0, float(ETP_DEFAULTS["hours_per_month"]), 0.01)
+
+    params = (("prod_ca_per_hour", p_ca), ("tickets_per_hour", p_tk),
+              ("min_staff", p_min), ("hours_per_month", p_hm))
+    etp_hourly, _, etp_monthly = compute_etp_cached(ctx["casc"], TABLES["hourly"], STORES, params)
+    etp_avg = etp_monthly.groupby("store_id").etp.mean().sort_values(ascending=False)
+
+    st.markdown('<div class="sec">Effectif moyen nécessaire, par magasin</div>', unsafe_allow_html=True)
+    efig = go.Figure(go.Bar(x=etp_avg.index, y=etp_avg.values, marker_color=NAVY,
+                            text=etp_avg.round(1), textposition="outside"))
+    efig.update_layout(height=320, margin=dict(l=10, r=10, t=20, b=10), plot_bgcolor="#fff",
+                       paper_bgcolor="rgba(0,0,0,0)", yaxis_title=f"ETP moyen / mois (S2 {YEAR})")
+    st.plotly_chart(efig, use_container_width=True)
+
+    etp_store = ctx["sel_store"] if ctx["sel_store"] != "Tous" else etp_avg.index[0]
+    st.markdown(f'<div class="sec">Répartition sur une journée type — samedi, '
+                f'{store_label(etp_store)}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="expl" style="box-shadow:none;padding:0 0 8px">Nombre de personnes '
+                'nécessaires heure par heure&nbsp;: sert à dimensionner les plannings.</div>',
+                unsafe_allow_html=True)
+    day_prof = (etp_hourly[etp_hourly.store_id == etp_store]
+                .assign(dow=lambda d: pd.to_datetime(d.date).dt.dayofweek)
+                .query("dow == 5").groupby("hour").staff.mean())
+    pfig = go.Figure(go.Scatter(x=day_prof.index, y=day_prof.values, fill="tozeroy",
+                                line=dict(color=ORANGE, width=3)))
+    pfig.update_layout(height=260, margin=dict(l=10, r=10, t=20, b=10), plot_bgcolor="#fff",
+                       paper_bgcolor="rgba(0,0,0,0)", xaxis_title="heure", yaxis_title="personnes")
+    st.plotly_chart(pfig, use_container_width=True)
+
 
 # --------------------------------------------------------------------------- #
-# 6. Analyse d'écarts (Bloc D)
+# PAGE — Écarts prévu / réel
 # --------------------------------------------------------------------------- #
-st.markdown('<div class="sec">S\'est-on trompé, et pourquoi ? (prévu vs réellement vendu)</div>',
-            unsafe_allow_html=True)
-st.markdown('<div class="expl">Sur les mois déjà écoulés, on compare ce qui avait été prévu à ce qui '
-            'a réellement été vendu, et on explique d\'où vient l\'écart. Trois causes possibles : '
-            '<b>le prix</b> (on a vendu plus ou moins cher que prévu), <b>le volume</b> (on a vendu '
-            'plus ou moins d\'unités), <b>le mix</b> (on a vendu des produits plus ou moins chers que '
-            'd\'habitude). Le graphique part du chiffre d\'affaires prévu (à gauche) et arrive au '
-            'chiffre d\'affaires réel (à droite), en montrant la part de chaque cause. Juste en dessous, '
-            'l\'écart de volume est détaillé : ce qui vient des promotions, du calendrier (jours '
-            'fériés…), et le reste (tendance de fond, météo, aléas).</div>', unsafe_allow_html=True)
-if RES["ecarts"] is None:
-    st.info(f"Décomposition absente. Lancer :  `python -m src.ecarts --scenario {scenario}`")
-else:
-    ec = RES["ecarts"]
-    if sel_store != "Tous":
-        ec = ec[ec.store_id == sel_store]
+def page_ecarts():
+    ctx = get_context(require_forecast=False)
+    page_header("S'est-on trompé, et pourquoi&nbsp;?",
+                f"Écart entre le prévu et le réellement vendu · "
+                f"{store_label(ctx['sel_store'])} · scénario {ctx['scenario']}")
+
+    st.markdown('<div class="expl">Sur les mois passés, on compare le prévu au réel et on explique '
+                'l\'écart par trois causes&nbsp;: <b>le prix</b> (vendu plus ou moins cher que prévu), '
+                '<b>le volume</b> (plus ou moins d\'unités), <b>le mix</b> (produits plus ou moins '
+                'chers que d\'habitude). Le graphique part du CA prévu (à gauche) et arrive au CA réel '
+                '(à droite). En dessous, l\'écart de volume est détaillé&nbsp;: promotions, calendrier '
+                '(jours fériés…), et le reste (tendance, météo, aléas).</div>', unsafe_allow_html=True)
+
+    if ctx["RES"]["ecarts"] is None:
+        st.info(f"Décomposition non calculée. Lancer :  `python -m src.ecarts --scenario {ctx['scenario']}`")
+        return
+    ec = ctx["RES"]["ecarts"]
+    if ctx["sel_store"] != "Tous":
+        ec = ec[ec.store_id == ctx["sel_store"]]
+    if ec.empty:
+        st.info("Aucune donnée d'écart pour ce périmètre.")
+        return
     agg = ec[["ca_prev", "effet_prix", "effet_volume", "effet_mix"]].sum()
     drivers = ec[["dont_promo", "dont_calendaire", "dont_autre"]].sum()
+
     wfig = go.Figure(go.Waterfall(
         orientation="v",
         measure=["absolute", "relative", "relative", "relative", "total"],
@@ -524,59 +564,84 @@ else:
         connector=dict(line=dict(color=LINE)),
         increasing=dict(marker=dict(color=OK)), decreasing=dict(marker=dict(color=ORANGE)),
         totals=dict(marker=dict(color=NAVY))))
-    wfig.update_layout(height=340, margin=dict(l=10, r=10, t=30, b=10), plot_bgcolor="#fff",
+    wfig.update_layout(height=360, margin=dict(l=10, r=10, t=30, b=10), plot_bgcolor="#fff",
                        paper_bgcolor="rgba(0,0,0,0)")
     st.plotly_chart(wfig, use_container_width=True)
+
+    st.markdown('<div class="sec">Détail de l\'écart de volume</div>', unsafe_allow_html=True)
     d1, d2, d3 = st.columns(3)
     for col, (lab, v) in zip((d1, d2, d3),
-                             [("dont effet promo", drivers.dont_promo),
+                             [("dont effet promotions", drivers.dont_promo),
                               ("dont effet calendaire", drivers.dont_calendaire),
                               ("dont autre (tendance, météo, aléa)", drivers.dont_autre)]):
         col.markdown(f'<div class="kpi"><div class="kpi-l">{lab}</div>'
                      f'<div class="kpi-v" style="color:{OK if v>=0 else ORANGE}">{v:+,.0f} €</div>'
-                     f'<div class="kpi-d" style="color:{MUTED}">reventilation de l\'effet quantité</div>'
+                     f'<div class="kpi-d" style="color:{MUTED}">part de l\'écart de quantité</div>'
                      f'</div>', unsafe_allow_html=True)
 
+
 # --------------------------------------------------------------------------- #
-# 7. Explicabilité — ce qui pilote la prévision
+# PAGE — Ce qui pilote la prévision (explicabilité)
 # --------------------------------------------------------------------------- #
-st.markdown('<div class="sec">Ce qui pilote la prévision</div>', unsafe_allow_html=True)
-_imp_path = config.RESULTS_DIR / "explain" / "feature_importance.csv"
-_fam_path = config.RESULTS_DIR / "explain" / "by_family.csv"
-if not _imp_path.exists():
-    st.info("Explicabilité non calculée. Lancer :  `python -m src.explain --scenario 2`")
-else:
-    imp = pd.read_csv(_imp_path)
-    fam = pd.read_csv(_fam_path)
-    st.markdown('<div class="expl">Poids de chaque variable dans les décisions du modèle '
-                '(part du « gain » : la réduction d\'erreur qu\'elle apporte). À gauche, les '
-                '10 variables les plus influentes ; à droite, le total par famille. Lecture '
-                'attendue pour ce type de modèle : l\'historique récent des ventes et la '
-                'saisonnalité dominent, les promotions et la météo apportent un complément '
-                'ciblé.</div>', unsafe_allow_html=True)
+def page_explain():
+    page_header("Ce qui pilote la prévision",
+                "Poids de chaque information dans les décisions du modèle")
+
+    st.markdown('<div class="expl">Quelles informations le modèle utilise-t-il le plus pour prévoir&nbsp;? '
+                'À gauche, les 10 plus influentes&nbsp;; à droite, le total par famille. Lecture '
+                'attendue pour ce type de modèle&nbsp;: l\'historique récent des ventes et la '
+                'saisonnalité dominent, les promotions et la météo apportent un complément ciblé.</div>',
+                unsafe_allow_html=True)
+
+    imp_path = config.RESULTS_DIR / "explain" / "feature_importance.csv"
+    fam_path = config.RESULTS_DIR / "explain" / "by_family.csv"
+    if not imp_path.exists():
+        st.info("Explicabilité non calculée. Lancer :  `python -m src.explain --scenario 2`")
+        return
+    imp = pd.read_csv(imp_path)
+    fam = pd.read_csv(fam_path)
     g1, g2 = st.columns([1.5, 1])
     with g1:
+        st.markdown('<div class="sec">Les 10 informations les plus influentes</div>', unsafe_allow_html=True)
         top = imp.head(10).iloc[::-1]
         ifig = go.Figure(go.Bar(x=top.importance_pct, y=top.libelle, orientation="h",
                                 marker_color=NAVY, text=top.importance_pct.round(1),
                                 textposition="outside"))
-        ifig.update_layout(height=350, margin=dict(l=10, r=10, t=20, b=10), plot_bgcolor="#fff",
-                           paper_bgcolor="rgba(0,0,0,0)", xaxis_title="part du gain (%)")
+        ifig.update_layout(height=360, margin=dict(l=10, r=10, t=20, b=10), plot_bgcolor="#fff",
+                           paper_bgcolor="rgba(0,0,0,0)", xaxis_title="part du poids (%)")
         st.plotly_chart(ifig, use_container_width=True)
     with g2:
+        st.markdown('<div class="sec">Par famille</div>', unsafe_allow_html=True)
         ff = fam.iloc[::-1]
         ffig = go.Figure(go.Bar(x=ff.importance_pct, y=ff.famille, orientation="h",
                                 marker_color=ORANGE, text=ff.importance_pct.round(0),
                                 textposition="outside"))
-        ffig.update_layout(height=350, margin=dict(l=10, r=10, t=20, b=10), plot_bgcolor="#fff",
-                           paper_bgcolor="rgba(0,0,0,0)", xaxis_title="part du gain (%)")
+        ffig.update_layout(height=360, margin=dict(l=10, r=10, t=20, b=10), plot_bgcolor="#fff",
+                           paper_bgcolor="rgba(0,0,0,0)", xaxis_title="part du poids (%)")
         st.plotly_chart(ffig, use_container_width=True)
     st.caption("Diagnostic calculé sur le scénario 2 (météo incluse), sur les 5 ans d'historique.")
 
-st.markdown(f"""<br><div style="color:{INK_SOFT};font-size:12px">
-<b>Méthode.</b> Backtest « origine glissante » : {config.BACKTEST_N_FOLDS} plis de
-{config.BACKTEST_HORIZON_DAYS} jours, métrique WAPE + biais, comparés à une prévision naïve
-(valeur de la semaine précédente). Hypothèses de travail 🟡 encore à caler avec le métier :
-définitions EB/PA, normes de productivité ETP, projection du panier article, écart d'inflation.
-Données illustratives (détail dans le README).</div>""",
-            unsafe_allow_html=True)
+
+# --------------------------------------------------------------------------- #
+# Barre latérale (persistante) + navigation
+# --------------------------------------------------------------------------- #
+pages = st.navigation([
+    st.Page(page_guide, title="Guide", icon="🧭", default=True),
+    st.Page(page_ca, title="Combien va-t-on vendre ?", icon="💶"),
+    st.Page(page_atterrissage, title="Comment finira l'année ?", icon="🎯"),
+    st.Page(page_etp, title="Besoin en personnel", icon="👥"),
+    st.Page(page_ecarts, title="Écarts prévu / réel", icon="🔍"),
+    st.Page(page_explain, title="Ce qui pilote la prévision", icon="⚙️"),
+])
+
+with st.sidebar:
+    st.markdown("### Réglages")
+    st.caption("Ces deux choix s'appliquent à toutes les pages.")
+    st.radio("Scénario de prévision", [1, 2], key="scenario",
+             format_func=lambda s: "1 — Base (calendrier + promos)" if s == 1 else "2 — Base + météo")
+    st.selectbox("Magasin", ["Tous"] + STORES.store_id.tolist(), key="sel_store",
+                 format_func=store_label)
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.caption("⚠️ Données synthétiques — chiffres sans valeur métier.")
+
+pages.run()

@@ -217,6 +217,56 @@ campagne promo, règles de calcul du personnel) sont modifiables&nbsp;; le reste
 """, unsafe_allow_html=True)
 
 # --------------------------------------------------------------------------- #
+# 0 bis. Panneau repliable : sur quoi reposent les données de démonstration
+# --------------------------------------------------------------------------- #
+with st.expander("📂 Sur quoi reposent ces données ? — hypothèses de la simulation "
+                 "(cliquer pour déplier)"):
+    st.markdown("""
+#### Pourquoi des données simulées&nbsp;?
+Ce démonstrateur n'a pas encore accès aux vraies données de l'enseigne. **Toutes les données
+affichées sont fabriquées par ordinateur**, uniquement pour montrer comment l'outil fonctionne
+de bout en bout. ⚠️ Les montants n'ont **aucune valeur réelle** : ils ne doivent pas être lus
+comme de vrais chiffres d'affaires.
+
+#### Ce que représentent les données
+- **12 magasins = 12 vraies villes françaises.** La taille de la ville fixe la taille du magasin
+  (Paris = grand, Brive = petit).
+- **1 magasin « Online »** pour le canal e-commerce (traité comme un magasin à part entière).
+- **60 produits d'animalerie** répartis en 8 familles (chien, chat, oiseau, aquariophilie,
+  rongeur, reptile, hygiène & soins, accessoires & jouets). 4 de ces produits sont « lancés »
+  en cours de période, pour tester le cas des nouveautés sans historique.
+- **5 ans de ventes quotidiennes** (mi-2021 à mi-2026), pour chaque magasin et chaque produit.
+
+#### Ce qu'on a volontairement caché dans les données (et que l'outil doit retrouver seul)
+C'est le vrai test du démonstrateur : on injecte des comportements réalistes dans les données,
+puis on vérifie que le moteur de prévision les **redécouvre tout seul**, sans qu'on les lui dise.
+- **Rythmes saisonniers** : pic du samedi en magasin, et ventes qui suivent les saisons
+  (antiparasitaires l'été, oiseaux l'hiver, jouets à Noël).
+- **Jours fériés et fêtes** : fermetures, affluence de décembre.
+- **Tendances de fond** : le canal Online grandit (~+14 %/an), un magasin est en léger déclin.
+- **Inflation des prix**, calquée sur l'inflation réelle de 2021-2023.
+- **6 types de promotions**, chacun avec son effet propre : une remise produit crée un pic de
+  ventes suivi d'un creux&nbsp;; une opération avec un influenceur a un effet décalé d'environ un
+  mois&nbsp;; une promo à seuil fait monter le nombre d'articles par panier&nbsp;; etc.
+- **Effet météo** : une canicule fait baisser le passage en magasin mais monter les commandes
+  en ligne, dope les antiparasitaires&nbsp;; une vague de froid dope le rayon oiseaux.
+- **Réalisme du terrain** : quelques ruptures de stock (~1 % des cas, où la vente est bridée
+  faute de produit) et beaucoup de produits qui ne se vendent pas tous les jours
+  (~45 % de journées sans vente, typique de l'équipement).
+
+#### La seule donnée réelle&nbsp;: la météo
+Pour que le scénario 2 ait un vrai signal à apprendre, on a utilisé la **vraie météo historique**
+des 12 villes (source Open-Meteo), récupérée une seule fois puis figée dans le projet. Tout le
+reste est simulé. *(L'ampleur de l'effet météo a été volontairement accentuée pour qu'elle soit
+détectable à cette échelle&nbsp;; son poids réel devra être mesuré sur de vraies données.)*
+
+#### Garde-fou
+À chaque génération, **13 vérifications automatiques** s'assurent que les données restent
+cohérentes (les totaux heure par heure collent aux totaux du jour, les promotions ont bien un
+effet visible, etc.). Si une vérification échoue, les données ne sont pas produites.
+""")
+
+# --------------------------------------------------------------------------- #
 # 1. Scénario & périmètre
 # --------------------------------------------------------------------------- #
 c1, c2, _ = st.columns([1.6, 1.4, 3])

@@ -21,6 +21,7 @@ d'écarts avec rolling forecast. Réalisé par AOSIS Consulting.
 | **D — Écarts + rolling forecast** | complet sauf données non structurées | décomposition prix/volume/mix/promo/calendaire, atterrissage fin d'année — Online agrégé (pas de sous-zones) |
 
 Revue détaillée, point par point des consignes client d'origine : [00_Preparatif/05_Etat_Avancement_vs_Consignes.md](00_Preparatif/05_Etat_Avancement_vs_Consignes.md).
+Feuille de route des prochaines étapes : [00_Preparatif/06_Prochaines_Etapes.md](00_Preparatif/06_Prochaines_Etapes.md).
 
 ## Démarrage rapide
 

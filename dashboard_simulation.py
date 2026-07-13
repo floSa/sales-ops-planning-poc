@@ -67,6 +67,11 @@ st.markdown(f"""
   .intro {{ background:#fff; border-radius:12px; padding:16px 20px; box-shadow:{SHADOW};
             color:{INK_SOFT}; font-size:13px; line-height:1.65; margin-bottom:10px; }}
   .intro b {{ color:{INK}; }}
+  .intro ol {{ margin:8px 0 10px; padding-left:22px; }}
+  .intro li {{ margin-bottom:7px; }}
+  .intro .lead {{ font-size:14px; color:{INK}; font-weight:700; margin-bottom:6px; }}
+  .intro .fine {{ font-size:12px; color:{MUTED}; margin-top:8px;
+                  border-top:1px solid {LINE}; padding-top:8px; }}
   [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {{
       color:{INK_SOFT} !important; font-size:12.5px !important; }}
 
@@ -178,16 +183,36 @@ st.markdown(f"""
 
 st.markdown(f"""
 <div class="intro">
-<b>Ce que fait l'outil.</b> À partir de 5 ans d'historique, il prévoit la demande future par
-magasin et par produit, en déduit le chiffre d'affaires (par une cascade de calcul), le besoin
-en personnel, et compare la prévision au réalisé. Deux scénarios sont proposés : une base
-calendrier + promotions, ou cette base enrichie de signaux météo.<br>
-<b>Périmètre.</b> 12 magasins physiques (villes françaises) + 1 canal Online ·
-60 références produit réparties en 8 familles · historique quotidien sur 5 ans.<br>
-<b>Sigles.</b> <b>SKU</b> = référence produit · <b>CA</b> = chiffre d'affaires ·
-<b>PV</b> = prix de vente · <b>PA</b> = panier article (nombre d'articles par ticket) ·
-<b>PM</b> = panier moyen (PV × PA) · <b>ETP</b> = équivalent temps plein ·
-<b>WAPE</b> = erreur moyenne de prévision, en % (plus le chiffre est bas, meilleure est la prévision).
+<div class="lead">À quoi sert cette page&nbsp;?</div>
+Elle aide à anticiper l'activité commerciale des magasins de l'enseigne. En descendant la page,
+elle répond à quatre questions, dans cet ordre&nbsp;:
+<ol>
+  <li><b>Combien va-t-on vendre&nbsp;?</b> À partir de 5 ans d'historique de ventes, l'outil prévoit
+      les ventes des 6 prochains mois — magasin par magasin, produit par produit — et les traduit
+      en chiffre d'affaires (le montant encaissé).</li>
+  <li><b>Comment va finir l'année&nbsp;?</b> Il additionne ce qui a déjà été vendu depuis janvier et
+      ce qu'il prévoit pour les mois restants, pour estimer le résultat de fin d'année
+      (ce qu'on appelle « l'atterrissage »).</li>
+  <li><b>De combien de vendeurs a-t-on besoin&nbsp;?</b> À partir des ventes prévues, il estime le
+      nombre de personnes nécessaires dans chaque magasin, heure par heure.</li>
+  <li><b>S'est-on trompé, et pourquoi&nbsp;?</b> Sur les mois déjà écoulés, il confronte ce qui avait
+      été prévu à ce qui a réellement été vendu, et explique d'où vient l'écart (prix, quantités,
+      promotions, jours fériés…).</li>
+</ol>
+<b>Deux scénarios de prévision</b> sont proposés en haut de page&nbsp;: le <b>scénario 1</b> s'appuie
+sur l'historique, le calendrier (week-ends, jours fériés) et les promotions&nbsp;; le <b>scénario 2</b>
+ajoute en plus l'effet de la météo.
+<div class="fine">
+<b>Comment s'en servir&nbsp;:</b> choisissez un scénario et un magasin tout en haut, puis faites
+défiler — chaque bloc se recalcule tout seul. Les champs que vous pouvez ajuster (hypothèses,
+campagne promo, règles de calcul du personnel) sont modifiables&nbsp;; le reste est calculé par l'outil.
+<br><b>Périmètre&nbsp;:</b> 12 magasins (villes françaises) + 1 canal Online · 60 produits en 8 familles ·
+5 ans d'historique quotidien.
+<br><b>Abréviations&nbsp;:</b> <b>CA</b> = chiffre d'affaires · <b>PV</b> = prix de vente ·
+<b>PA</b> = panier article (nombre d'articles par ticket) · <b>PM</b> = panier moyen (PV × PA) ·
+<b>SKU</b> = une référence produit · <b>ETP</b> = équivalent temps plein (1 = un salarié à temps complet) ·
+<b>WAPE</b> = erreur moyenne de la prévision, en&nbsp;% (plus c'est bas, plus la prévision est fiable).
+</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -216,13 +241,16 @@ if RES["forecast"] is None:
 # --------------------------------------------------------------------------- #
 # 2. Hypothèses mensuelles + simulation promo -> cascade
 # --------------------------------------------------------------------------- #
-st.markdown('<div class="sec">Hypothèses du scénario — saisie par mois</div>',
+st.markdown('<div class="sec">Ajuster les hypothèses (facultatif)</div>',
             unsafe_allow_html=True)
-st.markdown('<div class="expl">Le contrôleur de gestion ajuste ici les hypothèses mois par mois. '
-            'Les coefficients multiplient les valeurs proposées par l\'outil : par exemple PV × 1,02 '
-            'relève de 2 % le prix de vente moyen du mois. Le chiffre d\'affaires en découle par la '
-            'cascade : PV × PA = PM (panier moyen), puis PM × nombre de transactions = CA. À gauche, '
-            'les hypothèses ; à droite, une campagne promotionnelle à simuler.</div>',
+st.markdown('<div class="expl">Cette zone est optionnelle : par défaut, l\'outil utilise ses propres '
+            'hypothèses et vous pouvez descendre directement aux résultats. Si vous voulez tester une '
+            'variante (« et si les prix montaient de 2 %&nbsp;? »), ajustez les valeurs mois par mois. '
+            'Les nombres sont des <b>multiplicateurs</b> : 1,00 = inchangé, 1,02 = +2 %. Le chiffre '
+            'd\'affaires se recalcule alors selon l\'enchaînement&nbsp;: prix de vente × nombre '
+            'd\'articles par panier = panier moyen, puis panier moyen × nombre de tickets = chiffre '
+            'd\'affaires. À gauche, les hypothèses générales&nbsp;; à droite, une campagne '
+            'promotionnelle à simuler.</div>',
             unsafe_allow_html=True)
 months = sorted(RES["forecast"]["date"].dt.to_period("M").astype(str).unique())
 if "hyp" not in st.session_state or list(st.session_state.hyp.month) != months:
@@ -260,12 +288,12 @@ with pcol:
                               min_value=pd.Timestamp(config.HIST_END) + pd.Timedelta(days=1),
                               max_value=pd.Timestamp(config.FORECAST_END))
         p_perim = f5.selectbox("Périmètre", ["omnicanal", "magasin", "online"])
-        p_disc = st.slider("Profondeur de remise (typologie 'produits')", 0.0, 0.5, 0.20, 0.05)
+        p_disc = st.slider("Niveau de remise (pour une promo de type 'produits')", 0.0, 0.5, 0.20, 0.05)
         p_cat = st.multiselect("Catégories ciblées",
                                sorted(TABLES["products"].commodity_group.unique()),
                                default=["Chien"])
         proposed = propose_uplift(UPLIFT_REF, p_type, p_disc)
-        p_uplift = st.slider(f"Uplift quantités (proposé par l'outil : ×{proposed})",
+        p_uplift = st.slider(f"Hausse des ventes attendue (proposée par l'outil : ×{proposed})",
                              0.8, 3.0, float(proposed), 0.05)
         p_apply = st.form_submit_button("Appliquer la campagne au scénario")
 
@@ -292,14 +320,16 @@ else:
 # --------------------------------------------------------------------------- #
 # 3. KPI + courbe CA net
 # --------------------------------------------------------------------------- #
-st.markdown(f'<div class="sec">Prévision et chiffre d\'affaires — 2ᵉ semestre {YEAR} '
+st.markdown(f'<div class="sec">Combien va-t-on vendre ? — 2ᵉ semestre {YEAR} '
             f'({ "réseau entier" if sel_store == "Tous" else sel_store })</div>',
             unsafe_allow_html=True)
-st.markdown('<div class="expl">Chiffre d\'affaires net attendu sur le 2ᵉ semestre après application '
-            'de vos hypothèses, comparé à la proposition de l\'outil (hypothèses neutres). '
-            'Le WAPE indique la fiabilité de la prévision, mesurée sur le passé (plus bas = mieux ; '
-            'la « naïve » est la prévision de référence à battre). Sur le graphe : barres = CA simulé '
-            'mois par mois, ligne orange = proposition de l\'outil.</div>', unsafe_allow_html=True)
+st.markdown('<div class="expl">Chiffre d\'affaires attendu sur les 6 derniers mois de l\'année. '
+            'Le premier chiffre tient compte de vos éventuels ajustements&nbsp;; le second est la '
+            'proposition de l\'outil sans ajustement, pour comparaison. Le <b>WAPE</b> dit à quel '
+            'point la prévision est fiable, mesuré sur le passé (plus le pourcentage est bas, mieux '
+            'c\'est&nbsp;; la « naïve » est une prévision basique que l\'outil doit battre pour être '
+            'utile). Sur le graphique&nbsp;: les barres montrent le CA prévu mois par mois, la ligne '
+            'orange rappelle la proposition de l\'outil.</div>', unsafe_allow_html=True)
 ca_scn, ca_ref = casc_view.ca_net.sum(), casc_base_view.ca_net.sum()
 delta = ca_scn / ca_ref - 1 if ca_ref else 0
 wape_txt = "—"
@@ -344,11 +374,13 @@ st.plotly_chart(mfig, use_container_width=True)
 # --------------------------------------------------------------------------- #
 # 4. Atterrissage fin d'année (rolling forecast)
 # --------------------------------------------------------------------------- #
-st.markdown(f'<div class="sec">Atterrissage {YEAR} (rolling forecast)</div>', unsafe_allow_html=True)
-st.markdown('<div class="expl">Projection de fin d\'année : on additionne le chiffre d\'affaires déjà '
-            'réalisé sur janvier–juin (barres vertes) et la prévision de juillet–décembre '
-            '(barres bleues). Le total est l\'« atterrissage » — l\'estimation de clôture de l\'année, '
-            'réactualisée à mesure que les mois s\'écoulent.</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="sec">Comment va finir l\'année ? — atterrissage {YEAR}</div>',
+            unsafe_allow_html=True)
+st.markdown('<div class="expl">Estimation du résultat de fin d\'année : on additionne ce qui a déjà '
+            'été vendu de janvier à juin (barres vertes) et ce qui est prévu de juillet à décembre '
+            '(barres bleues). Le total est l\'« atterrissage » — la meilleure estimation actuelle de '
+            'ce que fera l\'année entière. Elle se précise chaque mois, au fur et à mesure que du réel '
+            'remplace du prévisionnel.</div>', unsafe_allow_html=True)
 sales = TABLES["sales"]
 reel = sales[sales.date.dt.year == YEAR]
 if sel_store != "Tous":
@@ -368,13 +400,16 @@ st.markdown(f"**Atterrissage {YEAR} : {(reel_m.sum() + prev_m.sum())/1e6:,.2f} M
 # --------------------------------------------------------------------------- #
 # 5. Besoin ETP (Bloc C — interne seul)
 # --------------------------------------------------------------------------- #
-st.markdown('<div class="sec">Besoin en personnel (ETP) par magasin</div>', unsafe_allow_html=True)
-st.markdown('<div class="expl">Traduction de la prévision en effectif : à partir du CA et de la '
-            'fréquentation prévus heure par heure et des horaires d\'ouverture, l\'outil estime le '
-            'nombre d\'équivalents temps plein (ETP) nécessaires par magasin. Réglez les normes '
-            'ci-dessous (marquées 🟡, à caler avec le métier). Le canal Online est exclu (pas de '
-            'magasin physique à armer). Le second graphe montre une journée type (samedi) et sert '
-            'à dimensionner les plannings heure par heure.</div>', unsafe_allow_html=True)
+st.markdown('<div class="sec">De combien de vendeurs a-t-on besoin ? — effectif par magasin</div>',
+            unsafe_allow_html=True)
+st.markdown('<div class="expl">On traduit les ventes prévues en nombre de personnes. À partir du '
+            'chiffre d\'affaires et de la fréquentation attendus heure par heure, et des horaires '
+            'd\'ouverture, l\'outil estime l\'effectif nécessaire dans chaque magasin — exprimé en '
+            '<b>ETP</b> (équivalent temps plein : 1 = un salarié à temps complet). Les règles de '
+            'calcul ci-dessous (par ex. « combien de CA une personne gère par heure ») sont des '
+            'valeurs de travail, à caler avec le métier. Le canal Online est exclu (pas de magasin '
+            'physique). Le second graphique montre une journée type (un samedi) et sert à répartir '
+            'les équipes heure par heure.</div>', unsafe_allow_html=True)
 e1, e2, e3, e4 = st.columns(4)
 p_ca = e1.number_input("€ CA / heure-vendeur 🟡", 100.0, 500.0, float(ETP_DEFAULTS["prod_ca_per_hour"]), 10.0)
 p_tk = e2.number_input("Tickets / heure-vendeur 🟡", 5.0, 30.0, float(ETP_DEFAULTS["tickets_per_hour"]), 1.0)
@@ -408,13 +443,16 @@ st.plotly_chart(pfig, use_container_width=True)
 # --------------------------------------------------------------------------- #
 # 6. Analyse d'écarts (Bloc D)
 # --------------------------------------------------------------------------- #
-st.markdown('<div class="sec">Analyse des écarts réel vs prévision</div>', unsafe_allow_html=True)
-st.markdown('<div class="expl">Sur la période de test, l\'écart entre le CA réel et le CA prévu est '
-            'décomposé en effets : <b>prix</b> (vente plus ou moins chère que prévu), <b>volume</b> '
-            '(plus ou moins d\'unités), <b>mix</b> (déformation du panier). Le graphe en cascade part '
-            'du CA prévu et arrive au CA réel. Sous le graphe, l\'écart de volume est reventilé par '
-            'cause : promotions, effet calendaire (jours fériés…) et le reste (tendance, météo, '
-            'aléa).</div>', unsafe_allow_html=True)
+st.markdown('<div class="sec">S\'est-on trompé, et pourquoi ? (prévu vs réellement vendu)</div>',
+            unsafe_allow_html=True)
+st.markdown('<div class="expl">Sur les mois déjà écoulés, on compare ce qui avait été prévu à ce qui '
+            'a réellement été vendu, et on explique d\'où vient l\'écart. Trois causes possibles : '
+            '<b>le prix</b> (on a vendu plus ou moins cher que prévu), <b>le volume</b> (on a vendu '
+            'plus ou moins d\'unités), <b>le mix</b> (on a vendu des produits plus ou moins chers que '
+            'd\'habitude). Le graphique part du chiffre d\'affaires prévu (à gauche) et arrive au '
+            'chiffre d\'affaires réel (à droite), en montrant la part de chaque cause. Juste en dessous, '
+            'l\'écart de volume est détaillé : ce qui vient des promotions, du calendrier (jours '
+            'fériés…), et le reste (tendance de fond, météo, aléas).</div>', unsafe_allow_html=True)
 if RES["ecarts"] is None:
     st.info(f"Décomposition absente. Lancer :  `python -m src.ecarts --scenario {scenario}`")
 else:

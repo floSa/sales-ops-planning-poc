@@ -74,7 +74,9 @@ st.markdown(f"""
      ressortent du fond gris de la page au lieu de s'y fondre. */
   div[data-baseweb="select"] > div, div[data-baseweb="input"] > div,
   div[data-testid="stDateInput"] input, div[data-testid="stNumberInput"] input,
-  div[data-testid="stTextInput"] input {{
+  div[data-testid="stTextInput"] input,
+  [data-testid="stSelectbox"] div:has(> input),
+  [data-testid="stMultiSelect"] div:has(> input) {{
       background-color: #fff !important; border: 1px solid {LINE} !important; }}
 
   /* Encart de saisie d'une campagne promo : carte blanche comme les KPI/graphes. */

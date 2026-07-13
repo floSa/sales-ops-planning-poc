@@ -27,10 +27,12 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src import config
-from src.cascade_ca import HYPOTHESIS_COLS, cascade, cascade_monthly, default_hypotheses
+from src.cascade_ca import HYPOTHESIS_COLS, cascade as _cascade
+from src.cascade_ca import cascade_monthly as _cascade_monthly
+from src.cascade_ca import default_hypotheses
 from src.ecarts import EFFECT_COLS
 from src.etp import DEFAULT_PARAMS as ETP_DEFAULTS
-from src.etp import compute_etp
+from src.etp import compute_etp as _compute_etp
 from src.simulation import apply_promo_to_forecast, propose_uplift, typology_uplift_reference
 
 # --------------------------------------------------------------------------- #
@@ -67,6 +69,27 @@ st.markdown(f"""
   .intro b {{ color:{INK}; }}
   [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {{
       color:{INK_SOFT} !important; font-size:12.5px !important; }}
+
+  /* Champs de saisie (select, multi-select, date, texte, nombre) : fond blanc,
+     ressortent du fond gris de la page au lieu de s'y fondre. */
+  div[data-baseweb="select"] > div, div[data-baseweb="input"] > div,
+  div[data-testid="stDateInput"] input, div[data-testid="stNumberInput"] input,
+  div[data-testid="stTextInput"] input {{
+      background-color: #fff !important; border: 1px solid {LINE} !important; }}
+
+  /* Encart de saisie d'une campagne promo : carte blanche comme les KPI/graphes. */
+  [data-testid="stForm"] {{
+      background: #fff; border-radius: 12px; padding: 18px 20px 6px; box-shadow: {SHADOW}; }}
+
+  /* Tableau d'hypothèses mensuelles : même traitement carte blanche. */
+  [data-testid="stElementContainer"]:has([data-testid="stDataFrame"]) {{
+      background: #fff; border-radius: 12px; padding: 4px; box-shadow: {SHADOW}; }}
+
+  /* Bouton "Appliquer la campagne" : gris neutre, pas la couleur d'accent orange. */
+  [data-testid="stFormSubmitButton"] button {{
+      background-color: {MUTED} !important; color: #fff !important; border: none !important; }}
+  [data-testid="stFormSubmitButton"] button:hover {{
+      background-color: {INK_SOFT} !important; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -82,6 +105,44 @@ def load_static():
     t = load_tables()
     ref = typology_uplift_reference(t["sales"], t["promos"], t["scope"])
     return t, ref
+
+
+# Cache manuel léger (clé = id() des objets stables + signature bon marché des
+# hypothèses/paramètres), PAS st.cache_data : st.cache_data hacherait le
+# CONTENU complet des tables à chaque interaction (143 k lignes de prévision +
+# 1,36 M lignes d'historique + 130 k lignes horaires) sur CHAQUE re-exécution
+# du script, y compris quand rien de pertinent n'a changé — plus coûteux que
+# le calcul lui-même. id() est une comparaison quasi gratuite, valide ici car
+# TABLES/RES sont eux-mêmes des objets stables retournés par des fonctions
+# @st.cache_data (même référence tant que le scénario ne change pas).
+def _hyp_signature(hyp_df):
+    if hyp_df is None:
+        return None
+    return tuple(map(tuple, hyp_df.itertuples(index=False)))
+
+
+def cascade_cached(forecast_df, sales_df, traffic_df, hyp_df):
+    cache = st.session_state.setdefault("_casc_cache", {})
+    key = (id(forecast_df), id(sales_df), id(traffic_df), _hyp_signature(hyp_df))
+    if key not in cache:
+        cache[key] = _cascade(forecast_df, sales_df, traffic_df, hypotheses=hyp_df)
+    return cache[key]
+
+
+def cascade_monthly_cached(casc_df):
+    cache = st.session_state.setdefault("_cascm_cache", {})
+    key = id(casc_df)
+    if key not in cache:
+        cache[key] = _cascade_monthly(casc_df)
+    return cache[key]
+
+
+def compute_etp_cached(casc_df, hourly_df, stores_df, params_tuple):
+    cache = st.session_state.setdefault("_etp_cache", {})
+    key = (id(casc_df), id(hourly_df), id(stores_df), params_tuple)
+    if key not in cache:
+        cache[key] = _compute_etp(casc_df, hourly_df, stores_df, params=dict(params_tuple))
+    return cache[key]
 
 
 @st.cache_data
@@ -218,9 +279,9 @@ if p_apply:
 elif "fc_sim" in st.session_state:
     fc = st.session_state.fc_sim
 
-# cascade sur la prévision (éventuellement modifiée)
-casc = cascade(fc.rename(columns={}), TABLES["sales"], TABLES["traffic"], hypotheses=hyp)
-casc_base = cascade(RES["forecast"], TABLES["sales"], TABLES["traffic"], hypotheses=None)
+# cascade sur la prévision (éventuellement modifiée) — mise en cache (voir cascade_cached)
+casc = cascade_cached(fc, TABLES["sales"], TABLES["traffic"], hyp)
+casc_base = cascade_cached(RES["forecast"], TABLES["sales"], TABLES["traffic"], None)
 if sel_store != "Tous":
     casc_view, casc_base_view = casc[casc.store_id == sel_store], casc_base[casc_base.store_id == sel_store]
 else:
@@ -265,8 +326,8 @@ k4.markdown(f'<div class="kpi"><div class="kpi-l">Transactions prévues S2</div>
             f'{casc_view.ca_net.sum()/max(casc_view.transactions.sum(),1):,.1f} €</div></div>',
             unsafe_allow_html=True)
 
-mm = cascade_monthly(casc_view)
-mm_base = cascade_monthly(casc_base_view)
+mm = cascade_monthly_cached(casc_view)
+mm_base = cascade_monthly_cached(casc_base_view)
 mfig = go.Figure()
 mfig.add_bar(x=mm.groupby("month").ca_net.sum().index,
              y=mm.groupby("month").ca_net.sum().values, name="CA net simulé",
@@ -318,9 +379,10 @@ p_tk = e2.number_input("Tickets / heure-vendeur 🟡", 5.0, 30.0, float(ETP_DEFA
 p_min = e3.number_input("Effectif minimum / h 🟡", 1.0, 5.0, float(ETP_DEFAULTS["min_staff"]), 0.5)
 p_hm = e4.number_input("Heures / mois / ETP", 100.0, 200.0, float(ETP_DEFAULTS["hours_per_month"]), 0.01)
 
-etp_hourly, etp_daily, etp_monthly = compute_etp(
-    casc, TABLES["hourly"], STORES,
-    params=dict(prod_ca_per_hour=p_ca, tickets_per_hour=p_tk, min_staff=p_min, hours_per_month=p_hm))
+_etp_params = (("prod_ca_per_hour", p_ca), ("tickets_per_hour", p_tk),
+               ("min_staff", p_min), ("hours_per_month", p_hm))
+etp_hourly, etp_daily, etp_monthly = compute_etp_cached(
+    casc, TABLES["hourly"], STORES, _etp_params)
 etp_avg = etp_monthly.groupby("store_id").etp.mean().sort_values(ascending=False)
 efig = go.Figure(go.Bar(x=etp_avg.index, y=etp_avg.values, marker_color=NAVY,
                         text=etp_avg.round(1), textposition="outside"))

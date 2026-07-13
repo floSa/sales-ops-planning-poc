@@ -6,12 +6,12 @@ Application Streamlit MULTI-PAGES (st.navigation). Profil unique CDG Ventes
 
 Barre latérale (persistante, s'applique à toutes les pages) : scénario + magasin.
 Pages :
-  🧭 Guide                      — à quoi sert l'outil, sur quoi reposent les données
-  💶 Combien va-t-on vendre ?   — prévision & chiffre d'affaires (+ hypothèses / promo)
-  🎯 Comment finira l'année ?   — atterrissage (rolling forecast)
-  👥 Besoin en personnel        — ETP par magasin
-  🔍 Écarts prévu / réel        — décomposition price/volume/mix/promo/calendaire
-  ⚙️ Ce qui pilote la prévision — explicabilité (importance des variables)
+  Guide                      — à quoi sert l'outil, sur quoi reposent les données
+  Combien va-t-on vendre ?   — prévision & chiffre d'affaires (+ hypothèses / promo)
+  Comment finira l'année ?   — atterrissage (rolling forecast)
+  Besoin en personnel        — ETP par magasin
+  Écarts prévu / réel        — décomposition price/volume/mix/promo/calendaire
+  Ce qui pilote la prévision — explicabilité (importance des variables)
 
 Lancement :  streamlit run dashboard_simulation.py
 Pré-requis : python main.py  (backtest + prévision + écarts + explicabilité)
@@ -37,7 +37,7 @@ NAVY, ORANGE, OK, WARN = "#211948", "#E84E24", "#809C30", "#F99500"
 INK, INK_SOFT, MUTED, LINE, BG = "#1A1A1A", "#33404F", "#4B5563", "#E5E5E5", "#F2F2F7"
 SHADOW = "0 2px 8px rgba(0,0,0,0.30)"
 
-st.set_page_config(page_title="Prévision des ventes", layout="wide", page_icon="🐾",
+st.set_page_config(page_title="Prévision des ventes", layout="wide",
                    initial_sidebar_state="expanded")
 st.markdown(f"""
 <style>
@@ -261,13 +261,13 @@ def page_guide():
     </div>
     """, unsafe_allow_html=True)
 
-    with st.expander("📂 Sur quoi reposent ces données ? — hypothèses de la simulation "
+    with st.expander("Sur quoi reposent ces données ? — hypothèses de la simulation "
                      "(cliquer pour déplier)"):
         st.markdown("""
 #### Pourquoi des données simulées&nbsp;?
 Ce démonstrateur n'a pas encore accès aux vraies données de l'enseigne. **Toutes les données
 affichées sont fabriquées par ordinateur**, uniquement pour montrer comment l'outil fonctionne.
-⚠️ Les montants n'ont **aucune valeur réelle** : ils ne doivent pas être lus comme de vrais
+**Attention : les montants n'ont aucune valeur réelle** : ils ne doivent pas être lus comme de vrais
 chiffres d'affaires.
 
 #### Ce que représentent les données
@@ -369,7 +369,7 @@ def page_ca():
     st.plotly_chart(mfig, use_container_width=True)
 
     # ------ contrôles facultatifs, repliés par défaut pour garder la page nette ------
-    with st.expander("🎛️ Tester des hypothèses ou une promotion (facultatif)"):
+    with st.expander("**Tester des hypothèses ou une promotion (facultatif)**"):
         st.markdown('<div class="expl" style="box-shadow:none;padding:0 0 10px">Par défaut, l\'outil '
                     'utilise ses propres hypothèses. Ici, vous pouvez tester une variante — les '
                     'valeurs sont des <b>multiplicateurs</b> (1,00 = inchangé, 1,02 = +2 %). '
@@ -495,9 +495,9 @@ def page_etp():
                 'magasin physique).</div>', unsafe_allow_html=True)
 
     e1, e2, e3, e4 = st.columns(4)
-    p_ca = e1.number_input("€ CA / heure-vendeur 🟡", 100.0, 500.0, float(ETP_DEFAULTS["prod_ca_per_hour"]), 10.0)
-    p_tk = e2.number_input("Tickets / heure-vendeur 🟡", 5.0, 30.0, float(ETP_DEFAULTS["tickets_per_hour"]), 1.0)
-    p_min = e3.number_input("Effectif minimum / h 🟡", 1.0, 5.0, float(ETP_DEFAULTS["min_staff"]), 0.5)
+    p_ca = e1.number_input("€ CA / heure-vendeur **(hypothèse)**", 100.0, 500.0, float(ETP_DEFAULTS["prod_ca_per_hour"]), 10.0)
+    p_tk = e2.number_input("Tickets / heure-vendeur **(hypothèse)**", 5.0, 30.0, float(ETP_DEFAULTS["tickets_per_hour"]), 1.0)
+    p_min = e3.number_input("Effectif minimum / h **(hypothèse)**", 1.0, 5.0, float(ETP_DEFAULTS["min_staff"]), 0.5)
     p_hm = e4.number_input("Heures / mois / ETP", 100.0, 200.0, float(ETP_DEFAULTS["hours_per_month"]), 0.01)
 
     params = (("prod_ca_per_hour", p_ca), ("tickets_per_hour", p_tk),
@@ -626,12 +626,12 @@ def page_explain():
 # Barre latérale (persistante) + navigation
 # --------------------------------------------------------------------------- #
 pages = st.navigation([
-    st.Page(page_guide, title="Guide", icon="🧭", default=True),
-    st.Page(page_ca, title="Combien va-t-on vendre ?", icon="💶"),
-    st.Page(page_atterrissage, title="Comment finira l'année ?", icon="🎯"),
-    st.Page(page_etp, title="Besoin en personnel", icon="👥"),
-    st.Page(page_ecarts, title="Écarts prévu / réel", icon="🔍"),
-    st.Page(page_explain, title="Ce qui pilote la prévision", icon="⚙️"),
+    st.Page(page_guide, title="Guide", default=True),
+    st.Page(page_ca, title="Combien va-t-on vendre ?"),
+    st.Page(page_atterrissage, title="Comment finira l'année ?"),
+    st.Page(page_etp, title="Besoin en personnel"),
+    st.Page(page_ecarts, title="Écarts prévu / réel"),
+    st.Page(page_explain, title="Ce qui pilote la prévision"),
 ])
 
 with st.sidebar:
@@ -642,6 +642,6 @@ with st.sidebar:
     st.selectbox("Magasin", ["Tous"] + STORES.store_id.tolist(), key="sel_store",
                  format_func=store_label)
     st.markdown("<br>", unsafe_allow_html=True)
-    st.caption("⚠️ Données synthétiques — chiffres sans valeur métier.")
+    st.caption("**Données synthétiques** — chiffres sans valeur métier.")
 
 pages.run()

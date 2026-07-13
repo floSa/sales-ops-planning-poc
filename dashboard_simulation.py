@@ -274,7 +274,7 @@ effet visible, etc.). Si une vérification échoue, les données ne sont pas pro
 # --------------------------------------------------------------------------- #
 # 1. Scénario & périmètre
 # --------------------------------------------------------------------------- #
-c1, c2, _ = st.columns([1.6, 1.4, 3])
+c1, c2, _ = st.columns([2.8, 1.4, 1.8])
 scenario = c1.radio("Scénario de prévision",
                     [1, 2], horizontal=True,
                     format_func=lambda s: "1 — Base (calendrier + promos)" if s == 1

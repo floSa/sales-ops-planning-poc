@@ -88,6 +88,11 @@ st.markdown(f"""
   [data-testid="stForm"] {{
       background: #fff; border-radius: 12px; padding: 18px 20px 6px; box-shadow: {SHADOW}; }}
 
+  /* Panneau "Sur quoi reposent ces données ?" : carte blanche, même traitement. */
+  [data-testid="stExpander"] {{
+      background: #fff; border-radius: 12px; box-shadow: {SHADOW}; border: none; }}
+  [data-testid="stExpander"] summary {{ border-radius: 12px; }}
+
   /* Tableau d'hypothèses mensuelles : même traitement carte blanche. */
   [data-testid="stElementContainer"]:has([data-testid="stDataFrame"]) {{
       background: #fff; border-radius: 12px; padding: 4px; box-shadow: {SHADOW}; }}

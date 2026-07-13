@@ -20,6 +20,8 @@ d'écarts avec rolling forecast. Réalisé par AOSIS Consulting.
 | **C — Module ETP** | dégradé « interne seul » | besoin ETP par magasin depuis CA/heure, fréquentation, horaires — pas de signal concurrentiel, ONLINE exclu |
 | **D — Écarts + rolling forecast** | complet sauf données non structurées | décomposition prix/volume/mix/promo/calendaire, atterrissage fin d'année — Online agrégé (pas de sous-zones) |
 
+Revue détaillée, point par point des consignes client d'origine : [00_Preparatif/05_Etat_Avancement_vs_Consignes.md](00_Preparatif/05_Etat_Avancement_vs_Consignes.md).
+
 ## Démarrage rapide
 
 ```bash

@@ -91,6 +91,38 @@ st.markdown(f"""
   [data-testid="stFormSubmitButton"] button {{
       background-color: {MUTED} !important; color: #fff !important; border: none !important; }}
   [data-testid="stFormSubmitButton"] button:hover {{ background-color: {INK_SOFT} !important; }}
+  /* --- Narration pédagogique (page Guide) --- */
+  .story {{ background:#fff; border-radius:12px; padding:18px 24px; box-shadow:{SHADOW};
+            color:{INK_SOFT}; font-size:13.5px; line-height:1.7; margin-bottom:14px; }}
+  .story b {{ color:{INK}; }}
+  .story .lead {{ font-size:15px; color:{INK}; font-weight:700; margin:2px 0 8px; }}
+  .story p {{ margin:0 0 10px; }}
+  .journey {{ display:flex; flex-direction:column; gap:10px; margin:8px 0 4px; }}
+  .qstep {{ display:flex; gap:14px; align-items:flex-start; background:{BG}; border-radius:10px;
+            padding:13px 16px; border-left:4px solid {ORANGE}; }}
+  .qstep .num {{ flex:0 0 auto; width:27px; height:27px; border-radius:50%; background:{NAVY};
+                 color:#fff; font-weight:700; font-size:13px; display:flex; align-items:center;
+                 justify-content:center; margin-top:1px; }}
+  .qstep .body {{ font-size:13px; color:{INK_SOFT}; line-height:1.6; }}
+  .qstep .q {{ font-weight:700; color:{INK}; font-size:14.5px; }}
+  .qstep .to {{ color:{ORANGE}; font-weight:700; }}
+  .method {{ display:flex; gap:12px; margin:8px 0 2px; flex-wrap:wrap; }}
+  .mcard {{ flex:1 1 200px; background:{BG}; border-radius:10px; padding:14px 16px; }}
+  .mcard .mn {{ color:{ORANGE}; font-weight:700; font-size:11px; letter-spacing:.08em;
+                text-transform:uppercase; }}
+  .mcard .mt {{ font-weight:700; color:{INK}; font-size:13.5px; margin:3px 0 4px; }}
+  .mcard .md {{ font-size:12.5px; color:{INK_SOFT}; line-height:1.6; }}
+  /* --- Bandeau narratif compact (pages analytiques) --- */
+  .narr {{ background:#fff; border-radius:12px; padding:4px 20px; box-shadow:{SHADOW};
+           margin:2px 0 16px; border-left:4px solid {ORANGE}; }}
+  .narr-row {{ display:flex; gap:14px; padding:11px 0; border-bottom:1px solid {LINE}; }}
+  .narr-row:last-child {{ border-bottom:none; }}
+  .narr-k {{ flex:0 0 118px; font-size:10.5px; font-weight:700; color:{MUTED};
+             text-transform:uppercase; letter-spacing:.07em; padding-top:2px; }}
+  .narr-v {{ flex:1; font-size:13px; color:{INK_SOFT}; line-height:1.6; }}
+  .narr-v b {{ color:{INK}; }}
+  .narr-good {{ flex:0 0 118px; font-size:10.5px; font-weight:700; color:{OK};
+               text-transform:uppercase; letter-spacing:.07em; padding-top:2px; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -211,6 +243,23 @@ def page_header(title, subtitle):
                 unsafe_allow_html=True)
 
 
+def story_block(question, method, read, good):
+    """Bandeau narratif homogène en tête de page analytique : rappelle la question
+    métier, la méthode, la clé de lecture et ce qu'un bon résultat montre — pour
+    qu'un lecteur non initié sache toujours quoi regarder."""
+    st.markdown(
+        f'<div class="narr">'
+        f'<div class="narr-row"><span class="narr-k">La question</span>'
+        f'<span class="narr-v">{question}</span></div>'
+        f'<div class="narr-row"><span class="narr-k">Notre méthode</span>'
+        f'<span class="narr-v">{method}</span></div>'
+        f'<div class="narr-row"><span class="narr-k">Comment lire</span>'
+        f'<span class="narr-v">{read}</span></div>'
+        f'<div class="narr-row"><span class="narr-good">Bon signe</span>'
+        f'<span class="narr-v">{good}</span></div>'
+        f'</div>', unsafe_allow_html=True)
+
+
 def forecast_missing_stop(ctx):
     st.error(f"La prévision du scénario {ctx['scenario']} n'a pas encore été générée. "
              f"Lancer dans un terminal :  `python -m src.forecast --scenario {ctx['scenario']}` "
@@ -224,32 +273,118 @@ def forecast_missing_stop(ctx):
 def page_guide():
     st.markdown(f"""
     <div class="hero">
-      <div class="hero-t">Prévision des ventes</div>
+      <div class="hero-t">Prévision des ventes — le fil de l'analyse</div>
       <div class="hero-s">Démonstrateur d'aide au pilotage commercial · profil Contrôleur de
       gestion (CDG) Ventes · prévision par magasin et par produit, au jour · atterrissage fin {YEAR}</div>
     </div>
     """, unsafe_allow_html=True)
 
+    # ---- 1. Le contexte : de quoi part-on ? -------------------------------- #
+    st.markdown(f"""
+    <div class="story">
+    <div class="lead">Mettez-vous à la place du contrôleur de gestion</div>
+    <p>Nous sommes à la mi-{YEAR}. Le premier semestre est <b>connu</b> : on sait exactement ce que
+    chaque magasin a vendu. Mais la direction attend une réponse à une question simple et difficile&nbsp;:
+    <b>où va-t-on atterrir en fin d'année, et avec quels moyens&nbsp;?</b></p>
+    <p>Y répondre «&nbsp;au feeling&nbsp;» ne tient pas&nbsp;: il y a <b>12 magasins</b>, <b>60 produits</b>,
+    des saisons, des promotions, des jours fériés, une météo capricieuse. Trop de combinaisons pour une
+    intuition. L'idée de cet outil&nbsp;: <b>apprendre des 5 dernières années</b> pour prolonger l'histoire
+    de façon crédible — puis dérouler, une question après l'autre, tout ce qu'un pilote de l'activité a
+    besoin de savoir.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ---- 2. Le fil rouge : les 5 questions, dans l'ordre ------------------- #
+    st.markdown('<div class="sec">Le fil rouge — 5 questions, dans l\'ordre</div>',
+                unsafe_allow_html=True)
     st.markdown("""
+    <div class="story" style="padding-top:14px">
+    <p style="margin-bottom:2px">Chaque page du menu de gauche répond à <b>une</b> question. Elles se
+    lisent comme un raisonnement continu&nbsp;: on prévoit, on projette l'année, on en tire des moyens,
+    puis on se contrôle.</p>
+    <div class="journey">
+      <div class="qstep"><div class="num">1</div><div class="body">
+        <span class="q">Combien va-t-on vendre&nbsp;?</span><br>
+        On prolonge l'historique sur les 6 prochains mois, magasin par magasin et produit par produit,
+        puis on traduit ces volumes en <b>chiffre d'affaires</b> (le montant encaissé).
+        <br><span class="to">→ page «&nbsp;Combien va-t-on vendre&nbsp;?&nbsp;»</span></div></div>
+      <div class="qstep"><div class="num">2</div><div class="body">
+        <span class="q">Comment va finir l'année&nbsp;?</span><br>
+        On colle le <b>réel déjà encaissé</b> (janv.–juin) devant le <b>prévu</b> (juil.–déc.)&nbsp;:
+        leur somme est l'«&nbsp;atterrissage&nbsp;», la meilleure estimation du résultat annuel.
+        <br><span class="to">→ page «&nbsp;Comment finira l'année&nbsp;?&nbsp;»</span></div></div>
+      <div class="qstep"><div class="num">3</div><div class="body">
+        <span class="q">De combien de vendeurs a-t-on besoin&nbsp;?</span><br>
+        Des ventes prévues, on déduit la <b>charge de travail</b>&nbsp;: combien de personnes il faut
+        par magasin, heure par heure, pour absorber l'activité attendue.
+        <br><span class="to">→ page «&nbsp;Besoin en personnel&nbsp;»</span></div></div>
+      <div class="qstep"><div class="num">4</div><div class="body">
+        <span class="q">S'est-on trompé, et pourquoi&nbsp;?</span><br>
+        Sur les mois déjà passés, on confronte le prévu au réel et on <b>décortique l'écart</b>&nbsp;:
+        vient-il du prix, du volume, du mix de produits, des promotions&nbsp;?
+        <br><span class="to">→ page «&nbsp;Écarts prévu / réel&nbsp;»</span></div></div>
+      <div class="qstep"><div class="num">5</div><div class="body">
+        <span class="q">Sur quoi le modèle s'appuie-t-il&nbsp;?</span><br>
+        On ouvre la boîte noire&nbsp;: quelles informations pèsent le plus dans ses prévisions&nbsp;?
+        De quoi vérifier que sa logique est <b>plausible pour un métier retail</b>.
+        <br><span class="to">→ page «&nbsp;Ce qui pilote la prévision&nbsp;»</span></div></div>
+    </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ---- 3. Comment l'outil devine l'avenir ------------------------------- #
+    st.markdown('<div class="sec">Comment l\'outil devine l\'avenir</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="story">
+    <p style="margin-bottom:4px">Pas de boule de cristal&nbsp;: rien que du passé, lu méthodiquement.
+    Trois idées suffisent à comprendre la mécanique.</p>
+    <div class="method">
+      <div class="mcard"><div class="mn">1 · Apprendre</div><div class="mt">Digérer 5 ans de ventes</div>
+        <div class="md">L'outil lit chaque journée de vente des 5 dernières années — près d'un million
+        et demi de lignes magasin&nbsp;× produit&nbsp;× jour.</div></div>
+      <div class="mcard"><div class="mn">2 · Repérer</div><div class="mt">Retrouver les régularités</div>
+        <div class="md">Il isole seul les rythmes cachés&nbsp;: pic du samedi, saisons, effet des promos,
+        des jours fériés, de la météo — sans qu'on les lui souffle.</div></div>
+      <div class="mcard"><div class="mn">3 · Prolonger</div><div class="mt">Rejouer vers l'avenir</div>
+        <div class="md">Il applique ces régularités aux 6 mois à venir, jour par jour, puis on additionne
+        pour obtenir des chiffres à l'échelle du magasin, du mois, de l'enseigne.</div></div>
+    </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ---- 4. Peut-on lui faire confiance ? --------------------------------- #
+    st.markdown('<div class="sec">Peut-on lui faire confiance&nbsp;?</div>', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="story">
+    <p>Une prévision ne vaut que si on sait <b>de combien elle se trompe</b>. On le mesure sans tricher&nbsp;:
+    on cache à l'outil une période qu'on connaît déjà, on lui demande de la prévoir, puis on compare à la
+    réalité. On répète l'exercice sur plusieurs périodes glissantes ({config.BACKTEST_N_FOLDS} passages de
+    {config.BACKTEST_HORIZON_DAYS} jours) — c'est le «&nbsp;backtest à origine glissante&nbsp;».</p>
+    <p style="margin-bottom:4px">L'erreur se lit en <b>WAPE</b> : l'écart moyen entre prévu et réel, en&nbsp;%
+    (plus c'est bas, mieux c'est). Et la barre à battre est une prévision «&nbsp;bête&nbsp;» — <b>répéter la
+    semaine précédente</b>&nbsp;: un modèle qui ne fait pas mieux ne sert à rien.</p>
+    <div class="method">
+      <div class="mcard"><div class="mn">Résultat</div><div class="mt">WAPE ≈ 0,69 vs 0,94</div>
+        <div class="md">L'outil se trompe nettement moins que la prévision naïve, sur <b>chacun</b> des
+        12&nbsp;magasins et des 8&nbsp;familles.</div></div>
+      <div class="mcard"><div class="mn">À l'échelle pilotage</div><div class="mt">WAPE ≈ 0,16</div>
+        <div class="md">Ramené au niveau magasin&nbsp;× jour — celui du contrôleur — l'erreur devient
+        faible&nbsp;: la prévision est exploitable pour décider.</div></div>
+      <div class="mcard"><div class="mn">Apport météo</div><div class="mt">+5&nbsp;% (jusqu'à +16&nbsp;%)</div>
+        <div class="md">Le scénario&nbsp;2 (météo) affine surtout les jours atypiques&nbsp;: gain net les
+        jours de pluie ou de forte anomalie de température.</div></div>
+    </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ---- 5. Comment s'en servir ------------------------------------------- #
+    st.markdown(f"""
     <div class="intro">
-    <div class="lead">À quoi sert cet outil&nbsp;?</div>
-    Il aide à anticiper l'activité commerciale des magasins de l'enseigne. Chaque page (menu de
-    gauche) répond à une question précise&nbsp;:
-    <ol>
-      <li><b>Combien va-t-on vendre&nbsp;?</b> À partir de 5 ans d'historique, il prévoit les ventes
-          des 6 prochains mois — magasin par magasin, produit par produit — et les traduit en
-          chiffre d'affaires (le montant encaissé).</li>
-      <li><b>Comment va finir l'année&nbsp;?</b> Il additionne ce qui a déjà été vendu et ce qu'il
-          prévoit pour les mois restants, pour estimer le résultat de fin d'année («&nbsp;l'atterrissage&nbsp;»).</li>
-      <li><b>De combien de vendeurs a-t-on besoin&nbsp;?</b> Il déduit des ventes prévues le nombre
-          de personnes nécessaires par magasin, heure par heure.</li>
-      <li><b>S'est-on trompé, et pourquoi&nbsp;?</b> Sur les mois passés, il confronte ce qui avait
-          été prévu à ce qui a réellement été vendu, et explique l'écart.</li>
-    </ol>
-    <b>Comment s'en servir&nbsp;:</b> en haut de la barre de gauche, choisissez un <b>scénario</b> et
-    un <b>magasin</b> — ces deux choix s'appliquent à toutes les pages. Puis naviguez d'une page à
-    l'autre. Le <b>scénario&nbsp;1</b> s'appuie sur l'historique, le calendrier et les promotions&nbsp;;
-    le <b>scénario&nbsp;2</b> ajoute l'effet de la météo.
+    <div class="lead">Pour commencer</div>
+    En haut de la barre de gauche, choisissez un <b>scénario</b> et un <b>magasin</b> — ces deux choix
+    s'appliquent à toutes les pages. Puis suivez le fil, de la page&nbsp;1 à la page&nbsp;5. Le
+    <b>scénario&nbsp;1</b> s'appuie sur l'historique, le calendrier et les promotions&nbsp;; le
+    <b>scénario&nbsp;2</b> ajoute l'effet de la météo.
     <div class="fine">
     <b>Périmètre&nbsp;:</b> 12 magasins (villes françaises) + 1 canal Online · 60 produits en 8 familles ·
     5 ans d'historique quotidien.
@@ -299,13 +434,11 @@ pour être détectable&nbsp;; son poids réel devra être mesuré sur de vraies 
 À chaque génération, **13 vérifications automatiques** s'assurent que les données restent cohérentes.
 """)
 
-    st.markdown(f"""<div class="expl" style="margin-top:14px">
-    <b>Méthode d'évaluation.</b> La fiabilité affichée (WAPE) est mesurée par un «&nbsp;backtest à
-    origine glissante&nbsp;» : {config.BACKTEST_N_FOLDS} passages de {config.BACKTEST_HORIZON_DAYS}
-    jours où l'on prévoit une période déjà connue, puis on compare à la réalité — le tout comparé à
-    une prévision naïve (répéter la semaine précédente) que l'outil doit battre. Hypothèses de
-    travail encore à caler avec le métier&nbsp;: définitions EB/PA, normes de productivité ETP,
-    projection du panier article, écart d'inflation. <b>Données illustratives</b> (détail dans le README).
+    st.markdown("""<div class="expl" style="margin-top:14px">
+    <b>À garder en tête.</b> Certaines règles restent des <b>hypothèses de travail</b>, à caler avec le
+    métier&nbsp;: définitions EB/PA, normes de productivité ETP, projection du panier article, écart
+    d'inflation. Et surtout&nbsp;: <b>toutes les données sont synthétiques</b> — les montants illustrent
+    la mécanique, ils n'ont aucune valeur métier (détail dans le README).
     </div>""", unsafe_allow_html=True)
 
 
@@ -320,12 +453,17 @@ def page_ca():
     if ctx["missing"]:
         forecast_missing_stop(ctx)
 
-    st.markdown('<div class="expl">Le <b>CA net simulé</b> tient compte de vos éventuels ajustements '
-                '(ci-dessous, facultatifs)&nbsp;; la <b>proposition de l\'outil</b> est la prévision '
-                'sans ajustement, pour comparaison. La <b>fiabilité (WAPE)</b> indique la qualité de '
-                'la prévision, mesurée sur le passé — plus le pourcentage est bas, mieux c\'est. '
-                'Le graphique montre le CA prévu mois par mois (barres) face à la proposition de '
-                'l\'outil (ligne orange).</div>', unsafe_allow_html=True)
+    story_block(
+        question="Combien chaque magasin va-t-il vendre sur le 2ᵉ semestre, et combien cela "
+                 "représente-t-il en chiffre d'affaires&nbsp;?",
+        method="On prolonge l'historique produit par produit, puis on remonte la cascade "
+               "<b>volume → panier moyen → CA net</b>. Vous pouvez tester vos propres hypothèses ou "
+               "une campagne promo (encart repliable plus bas)&nbsp;: tout se recalcule.",
+        read="Les <b>barres</b> = le CA net simulé mois par mois&nbsp;; la <b>ligne orange</b> = la "
+             "proposition de l'outil, sans ajustement, pour comparer. La <b>fiabilité (WAPE)</b> "
+             "rappelle l'erreur mesurée sur le passé — plus le % est bas, mieux c'est.",
+        good="Un WAPE nettement sous celui de la prévision naïve, et un profil mensuel cohérent avec "
+             "la saison (creux d'été, montée vers Noël).")
 
     cv, cbv = ctx["casc_view"], ctx["casc_base_view"]
     ca_scn, ca_ref = cv.ca_net.sum(), cbv.ca_net.sum()
@@ -442,11 +580,17 @@ def page_atterrissage():
     if ctx["missing"]:
         forecast_missing_stop(ctx)
 
-    st.markdown('<div class="expl">On additionne ce qui a <b>déjà été vendu</b> de janvier à juin '
-                '(barres vertes) et ce qui est <b>prévu</b> de juillet à décembre (barres bleues). '
-                'Le total est l\'« atterrissage »&nbsp;: la meilleure estimation actuelle du résultat '
-                'de l\'année entière. Elle se précise chaque mois, à mesure que du réel remplace du '
-                'prévisionnel.</div>', unsafe_allow_html=True)
+    story_block(
+        question="Si l'on prolonge la tendance, où l'année entière va-t-elle atterrir en chiffre "
+                 "d'affaires&nbsp;?",
+        method="On colle bout à bout le <b>réel déjà encaissé</b> (janv.–juin) et le <b>prévu</b> "
+               "(juil.–déc.), puis on additionne. C'est un « rolling forecast »&nbsp;: l'estimation "
+               "se précise chaque mois, à mesure que du réel remplace du prévisionnel.",
+        read="Barres <b>vertes</b> = réel observé&nbsp;; barres <b>bleues</b> = prévision. Le grand "
+             "chiffre en haut est l'atterrissage&nbsp;: la meilleure estimation actuelle du total "
+             "annuel.",
+        good="Une transition régulière entre réel et prévu, sans marche d'escalier suspecte au "
+             "mois de bascule (juillet).")
 
     mm = cascade_monthly_cached(ctx["casc_view"])
     sales = TABLES["sales"]
@@ -487,12 +631,17 @@ def page_etp():
     if ctx["missing"]:
         forecast_missing_stop(ctx)
 
-    st.markdown('<div class="expl">On traduit les ventes prévues en <b>nombre de personnes</b>. '
-                'À partir du chiffre d\'affaires et de la fréquentation attendus heure par heure, et '
-                'des horaires d\'ouverture, l\'outil estime l\'effectif nécessaire par magasin, en '
-                '<b>ETP</b> (1 = un salarié à temps complet). Les règles de calcul ci-dessous sont '
-                'des valeurs de travail, à caler avec le métier. Le canal Online est exclu (pas de '
-                'magasin physique).</div>', unsafe_allow_html=True)
+    story_block(
+        question="Combien de vendeurs faut-il, magasin par magasin, pour absorber l'activité "
+                 "prévue&nbsp;?",
+        method="On convertit le CA et la fréquentation attendus, heure par heure, en charge de "
+               "travail, à l'aide de <b>normes de productivité</b> (CA/heure, tickets/heure) et des "
+               "horaires d'ouverture. Résultat en <b>ETP</b> (1 = un temps complet). Les normes "
+               "ci-dessous sont ajustables.",
+        read="Le graphique du haut compare l'effectif moyen entre magasins&nbsp;; celui du bas montre "
+             "la répartition sur une journée type, pour dimensionner les plannings.",
+        good="Un classement des magasins cohérent avec leur taille, et une courbe journalière qui "
+             "suit les heures d'affluence (le canal Online est exclu — pas de magasin physique).")
 
     e1, e2, e3, e4 = st.columns(4)
     p_ca = e1.number_input("€ CA / heure-vendeur **(hypothèse)**", 100.0, 500.0, float(ETP_DEFAULTS["prod_ca_per_hour"]), 10.0)
@@ -537,12 +686,17 @@ def page_ecarts():
                 f"Écart entre le prévu et le réellement vendu · "
                 f"{store_label(ctx['sel_store'])} · scénario {ctx['scenario']}")
 
-    st.markdown('<div class="expl">Sur les mois passés, on compare le prévu au réel et on explique '
-                'l\'écart par trois causes&nbsp;: <b>le prix</b> (vendu plus ou moins cher que prévu), '
-                '<b>le volume</b> (plus ou moins d\'unités), <b>le mix</b> (produits plus ou moins '
-                'chers que d\'habitude). Le graphique part du CA prévu (à gauche) et arrive au CA réel '
-                '(à droite). En dessous, l\'écart de volume est détaillé&nbsp;: promotions, calendrier '
-                '(jours fériés…), et le reste (tendance, météo, aléas).</div>', unsafe_allow_html=True)
+    story_block(
+        question="Quand le réel s'écarte du prévu, d'où vient la différence — et est-ce inquiétant&nbsp;?",
+        method="Sur les mois passés, on décompose l'écart de CA en trois causes indépendantes&nbsp;: "
+               "<b>le prix</b> (vendu plus ou moins cher), <b>le volume</b> (plus ou moins d'unités), "
+               "<b>le mix</b> (produits plus ou moins chers que d'habitude). L'écart de volume est "
+               "ensuite reventilé entre promotions, calendrier et reste.",
+        read="Le graphique en cascade part du <b>CA prévu</b> (gauche) et arrive au <b>CA réel</b> "
+             "(droite)&nbsp;: chaque marche est une cause, verte si elle ajoute, orange si elle "
+             "retranche. Les trois tuiles du bas détaillent l'écart de volume.",
+        good="Des écarts qui s'expliquent par des causes identifiables (une promo, un jour férié) "
+             "plutôt que par un gros « autre » inexpliqué.")
 
     if ctx["RES"]["ecarts"] is None:
         st.info(f"Décomposition non calculée. Lancer :  `python -m src.ecarts --scenario {ctx['scenario']}`")
@@ -587,11 +741,14 @@ def page_explain():
     page_header("Ce qui pilote la prévision",
                 "Poids de chaque information dans les décisions du modèle")
 
-    st.markdown('<div class="expl">Quelles informations le modèle utilise-t-il le plus pour prévoir&nbsp;? '
-                'À gauche, les 10 plus influentes&nbsp;; à droite, le total par famille. Lecture '
-                'attendue pour ce type de modèle&nbsp;: l\'historique récent des ventes et la '
-                'saisonnalité dominent, les promotions et la météo apportent un complément ciblé.</div>',
-                unsafe_allow_html=True)
+    story_block(
+        question="Sur quelles informations le modèle s'appuie-t-il vraiment pour prévoir&nbsp;?",
+        method="On mesure, pour chaque information fournie au modèle, sa contribution à ses décisions, "
+               "puis on regroupe par grande famille (historique, calendrier, prix, météo…).",
+        read="À gauche, les 10 informations les plus influentes&nbsp;; à droite, le total par famille. "
+             "Plus la barre est longue, plus l'information pèse.",
+        good="Une hiérarchie plausible pour du retail&nbsp;: l'historique récent et la saisonnalité "
+             "dominent, prix et météo apportent un complément ciblé — pas de variable absurde en tête.")
 
     imp_path = config.RESULTS_DIR / "explain" / "feature_importance.csv"
     fam_path = config.RESULTS_DIR / "explain" / "by_family.csv"

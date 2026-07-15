@@ -45,6 +45,17 @@ st.markdown(f"""
   html, body, [class*="css"] {{ font-family: Arial, sans-serif; }}
   .stApp {{ background: {BG}; }}
   [data-testid="stToolbar"] {{ display: none; }}
+  /* Bouton pour RÉOUVRIR la sidebar quand elle est repliée (stExpandSidebarButton) :
+     son icône est en gris clair (fadedText60) posée sur notre fond clair -> quasi
+     invisible, la sidebar semblait impossible à récupérer. On en fait une pastille
+     navy bien visible, épinglée en haut à gauche. */
+  [data-testid="stExpandSidebarButton"] {{
+      display: flex !important; visibility: visible !important; opacity: 1 !important;
+      z-index: 1000 !important; background: {NAVY} !important; border-radius: 8px !important;
+      box-shadow: {SHADOW} !important; }}
+  [data-testid="stExpandSidebarButton"]:hover {{ background: {INK_SOFT} !important; }}
+  [data-testid="stExpandSidebarButton"] *,
+  [data-testid="stExpandSidebarButton"] svg {{ color: #fff !important; fill: #fff !important; }}
   [data-testid="stWidgetLabel"] p {{ color: {INK} !important; font-weight: 700 !important; font-size: 13px !important; }}
   h1,h2,h3 {{ color: {INK}; font-weight: 700; }}
   [data-testid="stSidebar"] {{ background: {NAVY}; }}
@@ -82,6 +93,19 @@ st.markdown(f"""
   [data-testid="stSelectbox"] div:has(> input),
   [data-testid="stMultiSelect"] div:has(> input) {{
       background-color: #fff !important; border: 1px solid {LINE} !important; }}
+  /* Sidebar : le selectbox/date/nombre a un fond blanc -> texte sombre
+     (la règle globale [data-testid="stSidebar"] * met tout en blanc, ce qui
+     rendait la valeur choisie blanche sur blanc -> illisible). */
+  [data-testid="stSidebar"] div[data-baseweb="select"] > div,
+  [data-testid="stSidebar"] div[data-baseweb="select"] input,
+  [data-testid="stSidebar"] div[data-baseweb="input"] input {{ color:{INK} !important; }}
+  [data-testid="stSidebar"] div[data-baseweb="select"] svg {{ fill:{INK} !important; }}
+  /* Menu déroulant (rendu dans un portail hors sidebar) : texte sombre sur blanc */
+  div[data-baseweb="popover"] [role="option"],
+  ul[data-baseweb="menu"] li,
+  div[data-baseweb="popover"] li {{ color:{INK} !important; background-color:#fff !important; }}
+  div[data-baseweb="popover"] [role="option"]:hover,
+  ul[data-baseweb="menu"] li:hover {{ background-color:{BG} !important; }}
   [data-testid="stForm"] {{
       background: #fff; border-radius: 12px; padding: 18px 20px 6px; box-shadow: {SHADOW}; }}
   [data-testid="stExpander"] {{

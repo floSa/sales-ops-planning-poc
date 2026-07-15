@@ -28,6 +28,7 @@ from src.cascade_ca import cascade_monthly as _cascade_monthly
 from src.cascade_ca import default_hypotheses
 from src.etp import DEFAULT_PARAMS as ETP_DEFAULTS
 from src.etp import compute_etp as _compute_etp
+from src import prediction_intervals as pi
 from src.simulation import apply_promo_to_forecast, propose_uplift, typology_uplift_reference
 
 # --------------------------------------------------------------------------- #
@@ -139,6 +140,12 @@ def load_static():
     t = load_tables()
     ref = typology_uplift_reference(t["sales"], t["promos"], t["scope"])
     return t, ref
+
+
+@st.cache_data
+def load_pi_factors(scenario: int):
+    """Facteurs de fourchette P10/P90 calibrés sur le backtest (ou None)."""
+    return pi.load_factors(scenario)
 
 
 @st.cache_data
@@ -265,6 +272,23 @@ def forecast_missing_stop(ctx):
              f"Lancer dans un terminal :  `python -m src.forecast --scenario {ctx['scenario']}` "
              f"(ou `python main.py` pour tout produire).")
     st.stop()
+
+
+def ca_band_by_month(casc_df, factors):
+    """Fourchette P10/P90 du CA mensuel, calibrée sur le backtest (ou None si
+    les facteurs ne sont pas disponibles)."""
+    if factors is None or casc_df is None or len(casc_df) == 0:
+        return None
+    sd = pi.store_day_bounds(casc_df, factors, value="ca_net")
+    rows = [(m, *pi.aggregate_band(g)) for m, g in sd.groupby("month")]
+    return pd.DataFrame(rows, columns=["month", "point", "lo", "hi"])
+
+
+def ca_band_total(casc_df, factors):
+    """Fourchette P10/P90 du CA total prévu (ou None)."""
+    if factors is None or casc_df is None or len(casc_df) == 0:
+        return None
+    return pi.aggregate_band(pi.store_day_bounds(casc_df, factors, value="ca_net"))
 
 
 # --------------------------------------------------------------------------- #
@@ -460,10 +484,11 @@ def page_ca():
                "<b>volume → panier moyen → CA net</b>. Vous pouvez tester vos propres hypothèses ou "
                "une campagne promo (encart repliable plus bas)&nbsp;: tout se recalcule.",
         read="Les <b>barres</b> = le CA net simulé mois par mois&nbsp;; la <b>ligne orange</b> = la "
-             "proposition de l'outil, sans ajustement, pour comparer. La <b>fiabilité (WAPE)</b> "
-             "rappelle l'erreur mesurée sur le passé — plus le % est bas, mieux c'est.",
-        good="Un WAPE nettement sous celui de la prévision naïve, et un profil mensuel cohérent avec "
-             "la saison (creux d'été, montée vers Noël).")
+             "proposition de l'outil, sans ajustement&nbsp;; la <b>zone ombrée</b> = la fourchette "
+             "P10–P90 (dans 8 cas sur 10, le réel tombe dedans). La <b>fiabilité (WAPE)</b> rappelle "
+             "l'erreur moyenne mesurée sur le passé — plus le % est bas, mieux c'est.",
+        good="Une fourchette resserrée autour de la prévision (les aléas se compensent au cumul), un "
+             "WAPE nettement sous la prévision naïve, et un profil mensuel cohérent avec la saison.")
 
     cv, cbv = ctx["casc_view"], ctx["casc_base_view"]
     ca_scn, ca_ref = cv.ca_net.sum(), cbv.ca_net.sum()
@@ -488,15 +513,33 @@ def page_ca():
                 f'<div class="kpi-v">{wape_main}</div>'
                 f'<div class="kpi-d" style="color:{MUTED}">{wape_txt}</div></div>',
                 unsafe_allow_html=True)
-    k4.markdown(f'<div class="kpi"><div class="kpi-l">Transactions prévues</div>'
-                f'<div class="kpi-v">{cv.transactions.sum()/1e3:,.0f} k</div>'
-                f'<div class="kpi-d" style="color:{MUTED}">panier moyen '
-                f'{cv.ca_net.sum()/max(cv.transactions.sum(),1):,.1f} €</div></div>',
-                unsafe_allow_html=True)
+    factors = load_pi_factors(ctx["scenario"])
+    band = ca_band_by_month(cv, factors)
+    total_band = ca_band_total(cv, factors)
+    if total_band is not None:
+        _, tlo, thi = total_band
+        k4.markdown(f'<div class="kpi"><div class="kpi-l">Fourchette S2 (P10–P90)</div>'
+                    f'<div class="kpi-v">{tlo/1e6:,.2f} – {thi/1e6:,.2f} M€</div>'
+                    f'<div class="kpi-d" style="color:{MUTED}">80&nbsp;% de chances (calibré backtest)'
+                    f'</div></div>', unsafe_allow_html=True)
+    else:
+        k4.markdown(f'<div class="kpi"><div class="kpi-l">Transactions prévues</div>'
+                    f'<div class="kpi-v">{cv.transactions.sum()/1e3:,.0f} k</div>'
+                    f'<div class="kpi-d" style="color:{MUTED}">panier moyen '
+                    f'{cv.ca_net.sum()/max(cv.transactions.sum(),1):,.1f} €</div></div>',
+                    unsafe_allow_html=True)
 
     mm = cascade_monthly_cached(cv)
     mm_base = cascade_monthly_cached(cbv)
     mfig = go.Figure()
+    # bande P10–P90 (derrière les barres) : incertitude de la prévision, calibrée
+    # sur le backtest — se resserre au cumul mensuel car les aléas se compensent.
+    if band is not None:
+        mfig.add_scatter(x=band.month, y=band.hi, mode="lines", line=dict(width=0),
+                         hoverinfo="skip", showlegend=False)
+        mfig.add_scatter(x=band.month, y=band.lo, mode="lines", line=dict(width=0),
+                         fill="tonexty", fillcolor="rgba(33,25,72,0.13)",
+                         name="Fourchette P10–P90", hoverinfo="skip")
     mfig.add_bar(x=mm.groupby("month").ca_net.sum().index,
                  y=mm.groupby("month").ca_net.sum().values, name="CA net simulé", marker_color=NAVY)
     mfig.add_scatter(x=mm_base.groupby("month").ca_net.sum().index,
@@ -505,6 +548,10 @@ def page_ca():
     mfig.update_layout(height=340, margin=dict(l=10, r=10, t=30, b=10), plot_bgcolor="#fff",
                        paper_bgcolor="rgba(0,0,0,0)", legend=dict(orientation="h"))
     st.plotly_chart(mfig, use_container_width=True)
+    if band is not None:
+        st.caption("La zone ombrée est la **fourchette P10–P90** : dans 8 cas sur 10, la vente réelle "
+                   "devrait tomber dedans. Elle est calibrée sur les erreurs passées (backtest) et "
+                   "s'élargit avec l'horizon (mois plus lointains = plus incertains).")
 
     # ------ contrôles facultatifs, repliés par défaut pour garder la page nette ------
     with st.expander("**Tester des hypothèses ou une promotion (facultatif)**"):
@@ -586,11 +633,12 @@ def page_atterrissage():
         method="On colle bout à bout le <b>réel déjà encaissé</b> (janv.–juin) et le <b>prévu</b> "
                "(juil.–déc.), puis on additionne. C'est un « rolling forecast »&nbsp;: l'estimation "
                "se précise chaque mois, à mesure que du réel remplace du prévisionnel.",
-        read="Barres <b>vertes</b> = réel observé&nbsp;; barres <b>bleues</b> = prévision. Le grand "
-             "chiffre en haut est l'atterrissage&nbsp;: la meilleure estimation actuelle du total "
-             "annuel.",
-        good="Une transition régulière entre réel et prévu, sans marche d'escalier suspecte au "
-             "mois de bascule (juillet).")
+        read="Barres <b>vertes</b> = réel observé (acquis)&nbsp;; barres <b>bleues</b> = prévision, "
+             "avec leur <b>fourchette P10–P90</b> (les moustaches). Le grand chiffre en haut est "
+             "l'atterrissage central&nbsp;; la fourchette ne porte que sur la partie prévue "
+             "(le réalisé est acquis).",
+        good="Une fourchette d'atterrissage étroite au regard des enjeux&nbsp;: l'incertitude sur le "
+             "semestre à venir reste maîtrisée une fois le 1ᵉʳ semestre acquis.")
 
     mm = cascade_monthly_cached(ctx["casc_view"])
     sales = TABLES["sales"]
@@ -601,21 +649,51 @@ def page_atterrissage():
     prev_m = mm.groupby("month").ca_net.sum()
 
     total = (reel_m.sum() + prev_m.sum()) / 1e6
+    # fourchette : seule la partie prévue (juil–déc) est incertaine ; le réel est acquis.
+    factors = load_pi_factors(ctx["scenario"])
+    band_total = ca_band_total(ctx["casc_view"], factors)
     k1, k2, k3 = st.columns(3)
-    k1.markdown(f'<div class="kpi"><div class="kpi-l">Atterrissage {YEAR}</div>'
-                f'<div class="kpi-v">{total:,.2f} M€</div>'
-                f'<div class="kpi-d" style="color:{MUTED}">année entière estimée</div></div>',
-                unsafe_allow_html=True)
+    if band_total is not None:
+        _, plo, phi = band_total
+        alo, ahi = (reel_m.sum() + plo) / 1e6, (reel_m.sum() + phi) / 1e6
+        k1.markdown(f'<div class="kpi"><div class="kpi-l">Atterrissage {YEAR}</div>'
+                    f'<div class="kpi-v">{total:,.2f} M€</div>'
+                    f'<div class="kpi-d" style="color:{MUTED}">fourchette P10–P90&nbsp;: '
+                    f'{alo:,.2f} – {ahi:,.2f} M€</div></div>', unsafe_allow_html=True)
+    else:
+        k1.markdown(f'<div class="kpi"><div class="kpi-l">Atterrissage {YEAR}</div>'
+                    f'<div class="kpi-v">{total:,.2f} M€</div>'
+                    f'<div class="kpi-d" style="color:{MUTED}">année entière estimée</div></div>',
+                    unsafe_allow_html=True)
     k2.markdown(f'<div class="kpi"><div class="kpi-l">Déjà réalisé (janv–juin)</div>'
                 f'<div class="kpi-v">{reel_m.sum()/1e6:,.2f} M€</div>'
                 f'<div class="kpi-d" style="color:{OK}">observé</div></div>', unsafe_allow_html=True)
-    k3.markdown(f'<div class="kpi"><div class="kpi-l">Reste à faire (juil–déc)</div>'
-                f'<div class="kpi-v">{prev_m.sum()/1e6:,.2f} M€</div>'
-                f'<div class="kpi-d" style="color:{MUTED}">prévu</div></div>', unsafe_allow_html=True)
+    if band_total is not None:
+        _, plo, phi = band_total
+        k3.markdown(f'<div class="kpi"><div class="kpi-l">Reste à faire (juil–déc)</div>'
+                    f'<div class="kpi-v">{prev_m.sum()/1e6:,.2f} M€</div>'
+                    f'<div class="kpi-d" style="color:{MUTED}">prévu · P10–P90&nbsp;: '
+                    f'{plo/1e6:,.2f} – {phi/1e6:,.2f} M€</div></div>', unsafe_allow_html=True)
+    else:
+        k3.markdown(f'<div class="kpi"><div class="kpi-l">Reste à faire (juil–déc)</div>'
+                    f'<div class="kpi-v">{prev_m.sum()/1e6:,.2f} M€</div>'
+                    f'<div class="kpi-d" style="color:{MUTED}">prévu</div></div>',
+                    unsafe_allow_html=True)
 
     afig = go.Figure()
     afig.add_bar(x=reel_m.index, y=reel_m.values, name="Réel (janv–juin)", marker_color=OK)
     afig.add_bar(x=prev_m.index, y=prev_m.values, name="Prévision (juil–déc)", marker_color=NAVY)
+    # barres d'incertitude P10–P90 sur les mois prévus
+    band = ca_band_by_month(ctx["casc_view"], factors)
+    if band is not None:
+        bm = band.set_index("month").reindex(prev_m.index)
+        afig.add_scatter(x=prev_m.index, y=prev_m.values, mode="markers",
+                         marker=dict(color=NAVY, size=1, opacity=0),
+                         error_y=dict(type="data", symmetric=False,
+                                      array=(bm.hi - bm.point).values,
+                                      arrayminus=(bm.point - bm.lo).values,
+                                      color=INK_SOFT, thickness=1.5, width=4),
+                         name="Fourchette P10–P90", hoverinfo="skip")
     afig.update_layout(height=340, margin=dict(l=10, r=10, t=30, b=10), plot_bgcolor="#fff",
                        paper_bgcolor="rgba(0,0,0,0)", legend=dict(orientation="h"))
     st.plotly_chart(afig, use_container_width=True)

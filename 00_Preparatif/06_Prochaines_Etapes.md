@@ -40,7 +40,7 @@ fois les vraies données disponibles.
 Améliorations de la qualité prédictive, indépendantes du brief mais à forte
 valeur.
 
-- [ ] **Prévision probabiliste** (quantiles P10 / P90) — indispensable pour un usage réassort / stock de sécurité, là où le point de prévision seul ne suffit pas. **M**
+- [x] **Prévision probabiliste** (fourchettes P10 / P90) — **version POC livrée** (`src/prediction_intervals.py`, affichée dans le dashboard) : intervalles calibrés empiriquement sur les erreurs du backtest (couverture ~80 % au grain magasin×jour), agrégés en quadrature avec corrélation calibrée. Reste à faire pour la cible pleine : **quantiles natifs** (LightGBM `objective="quantile"`) et validation de l'élargissement √(horizon) au-delà de 28 j. **M**
 - [ ] **Réconciliation hiérarchique** — garantir que la somme des prévisions SKU = prévision catégorie = prévision magasin = national (cohérence multi-niveaux). **M**
 - [ ] **Cannibalisation & effet halo** entre produits (une promo sur A déporte les ventes de son substitut B, ou dope un complément C). **L**
 - [ ] **Amélioration du cold-start** — meilleure prévision des nouveaux produits / nouvelles ouvertures (similarité, attributs produit). **M**

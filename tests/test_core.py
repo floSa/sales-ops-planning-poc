@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from src import config
+from src import prediction_intervals as pi
 from src.baselines import seasonal_naive
 from src.cascade_ca import cascade, cascade_monthly, default_hypotheses
 from src.ecarts import decompose
@@ -128,10 +129,64 @@ def test_coherence_horaire_journalier():
 
 
 # --------------------------------------------------------------------------- #
+# 5. Prévision probabiliste : bornes ordonnées et resserrement à l'agrégation
+# --------------------------------------------------------------------------- #
+def _toy_factors():
+    return pd.DataFrame({"wk": [1, 2, 3, 4],
+                         "f10": [0.80, 0.78, 0.80, 0.86],
+                         "f90": [1.25, 1.25, 1.34, 1.59]})
+
+
+def test_pi_bornes_ordonnees():
+    """store_day_bounds + aggregate_band : lo <= point <= hi, toujours."""
+    dates = pd.date_range(pd.Timestamp(config.HIST_END) + pd.Timedelta(days=1), periods=40)
+    rng = np.random.default_rng(0)
+    lines = pd.DataFrame({
+        "store_id": rng.choice(["S01", "S02"], 400),
+        "date": rng.choice(dates, 400),
+        "ca_net": rng.uniform(50, 500, 400),
+    })
+    sd = pi.store_day_bounds(lines, _toy_factors(), value="ca_net")
+    assert (sd.lo <= sd.val + 1e-9).all() and (sd.val <= sd.hi + 1e-9).all(), \
+        "borne magasin×jour non ordonnée"
+    point, lo, hi = pi.aggregate_band(sd)
+    assert lo <= point <= hi, f"fourchette agrégée non ordonnée : {lo} {point} {hi}"
+    print(f"  [ok] fourchette agrégée ordonnée : {lo:.0f} <= {point:.0f} <= {hi:.0f}")
+
+
+def test_pi_agregation_resserre():
+    """La demi-largeur relative agrégée < demi-largeur journalière (compensation
+    des aléas indépendants)."""
+    dates = pd.date_range(pd.Timestamp(config.HIST_END) + pd.Timedelta(days=1), periods=28)
+    lines = pd.DataFrame({"store_id": "S01", "date": list(dates), "ca_net": 100.0})
+    sd = pi.store_day_bounds(lines, _toy_factors(), value="ca_net")
+    hw_jour = ((sd.hi - sd.lo) / 2 / sd.val).mean()
+    point, lo, hi = pi.aggregate_band(sd)
+    hw_agg = (hi - lo) / 2 / point
+    assert hw_agg < hw_jour, f"agrégation ne resserre pas : {hw_agg:.3f} >= {hw_jour:.3f}"
+    print(f"  [ok] resserrement au cumul : ±{hw_jour:.1%} (jour) -> ±{hw_agg:.1%} (28 j)")
+
+
+def test_pi_calibration_couverture():
+    """Si le backtest est là : la couverture calibrée est proche de 80 %."""
+    bt = config.RESULTS_DIR / "backtest" / "scenario1" / "results.parquet"
+    if not bt.exists():
+        print("  [skip] backtest absent")
+        return
+    fac = pi.calibrate(1)
+    assert (fac.f10 < 1).all() and (fac.f90 > 1).all(), "facteurs n'encadrent pas la prévision"
+    assert 0.72 < fac.couverture.mean() < 0.88, \
+        f"couverture hors cible : {fac.couverture.mean():.1%}"
+    print(f"  [ok] couverture calibrée {fac.couverture.mean():.1%} (cible 80 %)")
+
+
+# --------------------------------------------------------------------------- #
 def _main():
     tests = [test_cascade_neutre_egale_modele, test_cascade_coef_pv_proportionnel,
              test_ecarts_identite_comptable, test_seasonal_naive_lag7,
-             test_coherence_horaire_journalier]
+             test_coherence_horaire_journalier,
+             test_pi_bornes_ordonnees, test_pi_agregation_resserre,
+             test_pi_calibration_couverture]
     print(f"=== {len(tests)} tests d'invariants ===")
     failed = 0
     for t in tests:

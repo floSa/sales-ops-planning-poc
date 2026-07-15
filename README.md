@@ -55,6 +55,7 @@ src/
   ecarts.py         décomposition écart réel/prévu : prix, volume, mix + reventilation promo/calendaire
   rolling_forecast.py  atterrissage fin d'année + suivi mensuel de crédibilité
   simulation.py     uplift promo proposé depuis l'historique, application au scénario
+  prediction_intervals.py  fourchettes P10/P90 calibrées sur le backtest (proba)
   explain.py        explicabilité : importance des variables (gain LightGBM) par famille métier
   compare_scenarios.py  comparaison scénario 1 vs 2 (apport de la météo)
 tests/test_core.py  invariants (cascade, décomposition d'écarts, naïve, cohérence horaire)
@@ -186,8 +187,12 @@ complétées en développement :
 - Pas de réconciliation hiérarchique (un seul niveau de modélisation,
   agrégations simples — MinT à considérer si plusieurs niveaux deviennent
   consommés simultanément, wiki §6).
-- Pas de prévision probabiliste (quantiles) en V1 — nécessaire avant tout
-  usage réassort (wiki §0.4).
+- **Prévision probabiliste (fourchettes P10/P90)** : version POC livrée, mais
+  **calibrée empiriquement sur le backtest** (pas des quantiles appris par le
+  modèle — cf. `src/prediction_intervals.py`). Couverture ~80 % au grain
+  magasin×jour ; au-delà de l'horizon de backtest (28 j) la fourchette est
+  élargie en √(horizon), extrapolation à revalider. Des quantiles natifs
+  (LightGBM `objective="quantile"`) restent la cible pour un usage réassort fin.
 - Données non structurées (météo pour l'explication d'écarts, tendances,
   concurrence) : hors scope V1 (cadrage §6).
 

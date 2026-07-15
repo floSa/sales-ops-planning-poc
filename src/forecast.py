@@ -63,6 +63,18 @@ def run_forecast(scenario: int = 1, mode: str | None = None) -> pd.DataFrame:
     out["ca_pred"] = pred * out["unit_price"]
     out["scenario"] = scenario
 
+    # Fourchettes P10/P90 (prévision probabiliste) : calibrées sur le backtest
+    # s'il est disponible (sinon on livre la prévision ponctuelle seule).
+    try:
+        from src import prediction_intervals as pi
+        factors = pi.calibrate(scenario)
+        out = pi.add_line_intervals(out, factors)
+        print(f"Fourchettes P10/P90 calibrées (couverture ~{factors.couverture.mean():.0%} "
+              f"au grain magasin×jour).")
+    except FileNotFoundError:
+        print("Backtest absent : prévision ponctuelle seule (fourchettes P10/P90 non calibrées). "
+              "Lancer le backtest puis relancer pour les obtenir.")
+
     out_dir = config.RESULTS_DIR / "forecast"
     out_dir.mkdir(parents=True, exist_ok=True)
     out.to_parquet(out_dir / f"forecast_daily_scenario{scenario}.parquet", index=False)

@@ -1,0 +1,14 @@
+store_id,store_name,region,store_type,surface_m2,population,latitude,longitude,is_online
+S01,Paris,Île-de-France & Est,grand,1400,2133000,48.8566,2.3522,0
+S02,Marseille,Sud,grand,1250,870000,43.2965,5.3698,0
+S03,Lyon,Sud,grand,1200,520000,45.764,4.8357,0
+S04,Toulouse,Sud,grand,1150,500000,43.6047,1.4442,0
+S05,Nantes,Ouest,moyen,950,320000,47.2184,-1.5536,0
+S06,Strasbourg,Île-de-France & Est,moyen,900,290000,48.5734,7.7521,0
+S07,Bordeaux,Ouest,moyen,880,260000,44.8378,-0.5792,0
+S08,Rennes,Ouest,moyen,820,220000,48.1173,-1.6778,0
+S09,Dijon,Île-de-France & Est,petit,600,160000,47.322,5.0415,0
+S10,Angers,Ouest,petit,580,155000,47.4784,-0.5632,0
+S11,Colmar,Île-de-France & Est,petit,520,68000,48.079,7.3585,0
+S12,Brive-la-Gaillarde,Sud,petit,450,46000,45.158,1.5339,0
+ONLINE,Canal Online,ONLINE,online,0,0,,,1

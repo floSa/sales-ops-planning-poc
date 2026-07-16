@@ -3,7 +3,12 @@
 # le CSS du dashboard impose un fond gris clair -> texte blanc illisible sur gris.
 [theme]
 base = "light"
-primaryColor = "#E84E24"
+# Orange de marque LÉGÈREMENT assombri (#E84E24 -> #C0391A) : Streamlit peint en
+# couleur primaire des éléments portant du texte BLANC (puces de multiselect,
+# accents). Avec l'orange vif, ce blanc tombait à un contraste de 3,8 — sous le
+# seuil WCAG AA (4,5) ; à #C0391A il passe à 5,5. L'orange vif d'origine reste
+# utilisé pour les aplats de graphiques (cf. ORANGE dans dashboard_simulation.py).
+primaryColor = "#C0391A"
 backgroundColor = "#FFFFFF"
 secondaryBackgroundColor = "#F2F2F7"
 textColor = "#1A1A1A"

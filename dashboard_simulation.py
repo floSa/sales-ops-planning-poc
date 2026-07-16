@@ -16,6 +16,25 @@ Pages :
 Lancement :  streamlit run dashboard_simulation.py
 Pré-requis : python main.py  (backtest + prévision + écarts + explicabilité)
 """
+# --------------------------------------------------------------------------- #
+# STABILITÉ — NE PAS RETIRER, et garder AVANT l'import de pandas/pyarrow.
+#
+# Symptôme : le serveur Streamlit mourait sans aucune trace dès qu'on changeait
+# de page ; seule la 1ʳᵉ page (Guide) restait affichable. Ce n'était pas un
+# plantage applicatif mais un SEGFAULT du processus.
+#
+# Diagnostic (`python -X faulthandler`) : toutes les piles pointaient pyarrow
+# (lecture parquet, tableaux de chaînes). Cause : l'allocateur mémoire par
+# défaut de pyarrow (jemalloc) est instable dans cet environnement (WSL + venv
+# avec libgomp préchargé en RTLD_GLOBAL). Bascule sur l'allocateur système :
+# 0 segfault sur toutes les pages, testé en boucle.
+#
+# La variable est lue par pyarrow À SON IMPORT : elle doit donc être posée
+# avant. setdefault() laisse la main à un réglage externe éventuel.
+import os
+
+os.environ.setdefault("ARROW_DEFAULT_MEMORY_POOL", "system")
+
 from pathlib import Path
 
 import pandas as pd
@@ -37,6 +56,68 @@ from src.simulation import apply_promo_to_forecast, propose_uplift, typology_upl
 NAVY, ORANGE, OK, WARN = "#211948", "#E84E24", "#809C30", "#F99500"
 INK, INK_SOFT, MUTED, LINE, BG = "#1A1A1A", "#33404F", "#4B5563", "#E5E5E5", "#F2F2F7"
 SHADOW = "0 2px 8px rgba(0,0,0,0.30)"
+SB_TEXT = "#FFFFFF"          # texte sur fond navy (sidebar)
+SB_SOFT = "#C7C9DB"          # texte secondaire sidebar — lisible sur navy (contraste > 7)
+# Variantes assombries POUR LE TEXTE : les couleurs de marque sont trop claires
+# pour du petit texte sur fond clair (vert 3,1 et orange 3,4 -> sous le seuil
+# WCAG AA de 4,5, mesuré au navigateur). Les teintes vives restent utilisées
+# pour les aplats de graphiques, où le contraste ne se juge pas de la même façon.
+OK_TEXT = "#5F7524"          # vert lisible : 5,2 sur blanc
+ORANGE_TEXT = "#C0391A"      # orange lisible : 4,9 sur gris clair · 5,5 sur blanc
+
+
+# --------------------------------------------------------------------------- #
+# Formatage FRANÇAIS des nombres
+# --------------------------------------------------------------------------- #
+# Python formate en anglais ("193,934.5") : dans une app française, "193,934 €"
+# se lit "193 virgule 934" -> contresens complet. On impose donc partout :
+# espace fine insécable pour les milliers, virgule pour les décimales, et une
+# unité TOUJOURS explicite (€ / k€ / M€).
+NBSP = " "   # espace fine insécable (séparateur de milliers)
+
+
+def fr(x, dec=0) -> str:
+    """Nombre au format français : 193 934 · 5,33 · 1 234,5"""
+    if x is None or (isinstance(x, float) and pd.isna(x)):
+        return "—"
+    s = f"{x:,.{dec}f}"                      # 193,934.50 (anglais)
+    s = s.replace(",", "\x00").replace(".", ",").replace("\x00", NBSP)
+    return s
+
+
+def eur(x, dec=0) -> str:
+    """Montant en euros, unité explicite : 934 € · 12,3 k€ · 5,33 M€"""
+    if x is None or (isinstance(x, float) and pd.isna(x)):
+        return "—"
+    a = abs(x)
+    if a >= 1e6:
+        return f"{fr(x / 1e6, 2)}{NBSP}M€"
+    if a >= 1e3:
+        return f"{fr(x / 1e3, 1)}{NBSP}k€"
+    return f"{fr(x, dec)}{NBSP}€"
+
+
+def pct(x, dec=1, signe=False) -> str:
+    """Pourcentage français : 25,9 % · +2,7 %"""
+    if x is None or (isinstance(x, float) and pd.isna(x)):
+        return "—"
+    s = f"{fr(x * 100, dec)}{NBSP}%"
+    return f"+{s}" if signe and x >= 0 else s
+
+
+# Axes Plotly : mêmes conventions (séparateur milliers = espace fine, virgule décimale)
+PLOTLY_FR = dict(separators=", ")
+
+
+MOIS_FR = {1: "janv.", 2: "févr.", 3: "mars", 4: "avr.", 5: "mai", 6: "juin",
+           7: "juil.", 8: "août", 9: "sept.", 10: "oct.", 11: "nov.", 12: "déc."}
+
+
+def mois_fr(periode) -> str:
+    """'2026-07' -> 'juil. 2026'. Sans ça, Plotly interprète la chaîne comme une
+    date et affiche des mois ANGLAIS ('Jul 2026') dans une interface française."""
+    p = pd.Period(str(periode), freq="M")
+    return f"{MOIS_FR[p.month]} {p.year}"
 
 st.set_page_config(page_title="Prévision des ventes", layout="wide",
                    initial_sidebar_state="expanded")
@@ -56,11 +137,43 @@ st.markdown(f"""
   [data-testid="stExpandSidebarButton"]:hover {{ background: {INK_SOFT} !important; }}
   [data-testid="stExpandSidebarButton"] *,
   [data-testid="stExpandSidebarButton"] svg {{ color: #fff !important; fill: #fff !important; }}
+  /* Filet de sécurité : Streamlit mémorise l'état "replié" dans le localStorage du
+     navigateur -> la sidebar (qui porte TOUTE la navigation) pouvait rester
+     introuvable au rechargement, bloquant l'utilisateur sur la 1re page. On la
+     force visible : la navigation ne peut plus être perdue. */
+  [data-testid="stSidebar"] {{
+      display: block !important; visibility: visible !important;
+      transform: none !important; margin-left: 0 !important;
+      min-width: 244px !important; width: 244px !important; }}
+  [data-testid="stSidebar"][aria-expanded="false"] {{
+      display: block !important; transform: none !important; }}
+  [data-testid="stSidebarContent"] {{ visibility: visible !important; opacity: 1 !important; }}
   [data-testid="stWidgetLabel"] p {{ color: {INK} !important; font-weight: 700 !important; font-size: 13px !important; }}
   h1,h2,h3 {{ color: {INK}; font-weight: 700; }}
   [data-testid="stSidebar"] {{ background: {NAVY}; }}
-  [data-testid="stSidebar"] * {{ color: #fff; }}
-  [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {{ color: rgba(255,255,255,.85) !important; }}
+  /* --- Texte de la sidebar ---------------------------------------------------
+     ATTENTION : ne JAMAIS remettre une règle « [data-testid="stSidebar"] * ».
+     C'était la cause racine du bug « blanc sur blanc » : le sélecteur * gagne
+     sur l'héritage et repeignait en blanc le texte des champs (dont le fond est
+     blanc), rendant la valeur choisie invisible. On passe par l'HÉRITAGE (le
+     conteneur donne la couleur, les enfants peuvent la redéfinir librement). */
+  [data-testid="stSidebar"] {{ color: {SB_TEXT}; }}
+  [data-testid="stSidebar"] [data-testid="stMarkdownContainer"],
+  [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+  [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2,
+  [data-testid="stSidebar"] h3, [data-testid="stSidebar"] label,
+  [data-testid="stSidebar"] [data-testid="stRadioOption"] p {{ color: {SB_TEXT}; }}
+  [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {{ color: {SB_TEXT} !important; }}
+  /* Captions de la sidebar : la règle globale les mettait en INK_SOFT (#33404F)
+     sur navy -> contraste 1,53, illisible. Ici : gris clair lisible (> 7). */
+  [data-testid="stSidebar"] [data-testid="stCaptionContainer"],
+  [data-testid="stSidebar"] [data-testid="stCaptionContainer"] p,
+  [data-testid="stSidebar"] [data-testid="stCaptionContainer"] em,
+  [data-testid="stSidebar"] [data-testid="stCaptionContainer"] strong {{
+      color: {SB_SOFT} !important; }}
+  /* Item de navigation actif : fond plus contrasté que le rgba(…,.25) par défaut */
+  [data-testid="stSidebarNavLink"][aria-current="page"],
+  [data-testid="stSidebarNavLink"]:hover {{ background: rgba(255,255,255,.16) !important; }}
   .ptitle {{ font-size:22px; font-weight:700; color:{INK}; margin:2px 0 2px; }}
   .psub {{ font-size:13px; color:{INK_SOFT}; margin-bottom:4px; }}
   .rule {{ height:3px; background:{ORANGE}; border-radius:2px; width:60px; margin:6px 0 16px; }}
@@ -87,25 +200,53 @@ st.markdown(f"""
                   border-top:1px solid {LINE}; padding-top:8px; }}
   [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {{
       color:{INK_SOFT} !important; font-size:12.5px !important; }}
-  div[data-baseweb="select"] > div, div[data-baseweb="input"] > div,
-  div[data-testid="stDateInput"] input, div[data-testid="stNumberInput"] input,
-  div[data-testid="stTextInput"] input,
-  [data-testid="stSelectbox"] div:has(> input),
-  [data-testid="stMultiSelect"] div:has(> input) {{
-      background-color: #fff !important; border: 1px solid {LINE} !important; }}
-  /* Sidebar : le selectbox/date/nombre a un fond blanc -> texte sombre
-     (la règle globale [data-testid="stSidebar"] * met tout en blanc, ce qui
-     rendait la valeur choisie blanche sur blanc -> illisible). */
-  [data-testid="stSidebar"] div[data-baseweb="select"] > div,
-  [data-testid="stSidebar"] div[data-baseweb="select"] input,
-  [data-testid="stSidebar"] div[data-baseweb="input"] input {{ color:{INK} !important; }}
-  [data-testid="stSidebar"] div[data-baseweb="select"] svg {{ fill:{INK} !important; }}
-  /* Menu déroulant (rendu dans un portail hors sidebar) : texte sombre sur blanc */
-  div[data-baseweb="popover"] [role="option"],
-  ul[data-baseweb="menu"] li,
-  div[data-baseweb="popover"] li {{ color:{INK} !important; background-color:#fff !important; }}
-  div[data-baseweb="popover"] [role="option"]:hover,
-  ul[data-baseweb="menu"] li:hover {{ background-color:{BG} !important; }}
+  /* --- Champs de saisie -------------------------------------------------------
+     Structure réelle (vérifiée en inspectant le DOM ; cette version de Streamlit
+     n'expose AUCUN data-baseweb, les anciennes règles ne matchaient rien) :
+       [data-testid="stSelectbox"]
+         ├── <label data-testid="stWidgetLabel">   <- le LIBELLÉ (fond navy)
+         └── .react-aria-ComboBox > [role=group] > input[role=combobox]  <- le CHAMP
+     On ne peint QUE le champ en blanc : peindre tout le conteneur mettait aussi
+     le libellé sur fond blanc (donc blanc sur blanc). */
+  [data-testid="stSelectbox"] [role="group"],
+  [data-testid="stSelectbox"] input[role="combobox"],
+  [data-testid="stMultiSelect"] [role="group"],
+  [data-testid="stNumberInput"] input, [data-testid="stTextInput"] input,
+  [data-testid="stDateInput"] input {{ background-color: #fff !important; }}
+  [data-testid="stSelectbox"] [role="group"],
+  [data-testid="stMultiSelect"] [role="group"],
+  [data-testid="stNumberInput"] input, [data-testid="stTextInput"] input,
+  [data-testid="stDateInput"] input {{ border: 1px solid {LINE} !important; }}
+  /* Texte du champ : TOUJOURS sombre (le fond est blanc), y compris dans la
+     sidebar navy -> c'est LE correctif du « magasin invisible ». */
+  [data-testid="stSelectbox"] input[role="combobox"],
+  [data-testid="stMultiSelect"] input,
+  [data-testid="stNumberInput"] input, [data-testid="stTextInput"] input,
+  [data-testid="stDateInput"] input {{ color: {INK} !important; }}
+  /* Chevron du selectbox (svg fill="currentColor") */
+  [data-testid="stSelectbox"] button[aria-haspopup="listbox"],
+  [data-testid="stMultiSelect"] button {{ color: {INK} !important; background: transparent !important; }}
+  /* Menu déroulant : rendu dans un portail HORS de la sidebar -> règles globales */
+  [role="listbox"], [role="listbox"] *, [role="option"], [role="option"] * {{
+      color: {INK} !important; }}
+  [role="listbox"] {{ background-color: #fff !important; }}
+  [role="option"][aria-selected="true"], [role="option"]:hover {{
+      background-color: {BG} !important; }}
+  /* Icône « replier la sidebar » : sur navy -> blanche (elle héritait du sombre
+     depuis la suppression de la règle globale). */
+  [data-testid="stSidebarCollapseButton"],
+  [data-testid="stSidebarCollapseButton"] * {{ color: {SB_TEXT} !important; }}
+  /* Sliders : la valeur courante s'affiche dans la couleur primaire (orange)
+     JUSTE AU-DESSUS du curseur, lui aussi orange -> texte invisible (contraste
+     mesuré : 1,0). On la passe en sombre, et les bornes min/max en gris lisible. */
+  /* La valeur se superpose au curseur (orange) : on lui donne sa propre pastille
+     blanche -> texte sombre lisible quel que soit ce qu'il y a dessous. */
+  [data-testid="stSliderThumbValue"] {{
+      color: {INK} !important; font-weight: 700 !important;
+      background: #fff !important; padding: 0 5px !important; border-radius: 4px !important;
+      border: 1px solid {LINE} !important; }}
+  [data-testid="stSliderTickBar"], [data-testid="stSliderTickBar"] * {{
+      color: {MUTED} !important; }}
   [data-testid="stForm"] {{
       background: #fff; border-radius: 12px; padding: 18px 20px 6px; box-shadow: {SHADOW}; }}
   [data-testid="stExpander"] {{
@@ -130,10 +271,10 @@ st.markdown(f"""
                  justify-content:center; margin-top:1px; }}
   .qstep .body {{ font-size:13px; color:{INK_SOFT}; line-height:1.6; }}
   .qstep .q {{ font-weight:700; color:{INK}; font-size:14.5px; }}
-  .qstep .to {{ color:{ORANGE}; font-weight:700; }}
+  .qstep .to {{ color:{ORANGE_TEXT}; font-weight:700; }}
   .method {{ display:flex; gap:12px; margin:8px 0 2px; flex-wrap:wrap; }}
   .mcard {{ flex:1 1 200px; background:{BG}; border-radius:10px; padding:14px 16px; }}
-  .mcard .mn {{ color:{ORANGE}; font-weight:700; font-size:11px; letter-spacing:.08em;
+  .mcard .mn {{ color:{ORANGE_TEXT}; font-weight:700; font-size:11px; letter-spacing:.08em;
                 text-transform:uppercase; }}
   .mcard .mt {{ font-weight:700; color:{INK}; font-size:13.5px; margin:3px 0 4px; }}
   .mcard .md {{ font-size:12.5px; color:{INK_SOFT}; line-height:1.6; }}
@@ -146,7 +287,7 @@ st.markdown(f"""
              text-transform:uppercase; letter-spacing:.07em; padding-top:2px; }}
   .narr-v {{ flex:1; font-size:13px; color:{INK_SOFT}; line-height:1.6; }}
   .narr-v b {{ color:{INK}; }}
-  .narr-good {{ flex:0 0 118px; font-size:10.5px; font-weight:700; color:{OK};
+  .narr-good {{ flex:0 0 118px; font-size:10.5px; font-weight:700; color:{OK_TEXT};
                text-transform:uppercase; letter-spacing:.07em; padding-top:2px; }}
 </style>
 """, unsafe_allow_html=True)
@@ -158,7 +299,13 @@ YEAR = pd.Timestamp(config.HIST_END).year
 # --------------------------------------------------------------------------- #
 # Chargement (mis en cache)
 # --------------------------------------------------------------------------- #
-@st.cache_data
+# @st.cache_resource et NON @st.cache_data pour toutes les données lourdes :
+# cache_data sérialise/désérialise les DataFrame via Arrow à chaque rerun. Avec
+# pandas 3 + pyarrow 25, les objets restitués provoquaient des SEGFAULT (crash
+# du serveur, sans trace, dès qu'on changeait de page). cache_resource garde
+# l'objet Python tel quel — aucune conversion Arrow. Ces tables sont lues et
+# jamais modifiées, ce qui est exactement l'usage prévu de cache_resource.
+@st.cache_resource
 def load_static():
     from src.dataset import load_tables
     t = load_tables()
@@ -166,13 +313,13 @@ def load_static():
     return t, ref
 
 
-@st.cache_data
+@st.cache_resource
 def load_pi_factors(scenario: int):
     """Facteurs de fourchette P10/P90 calibrés sur le backtest (ou None)."""
     return pi.load_factors(scenario)
 
 
-@st.cache_data
+@st.cache_resource
 def load_results(scenario: int):
     r = {}
     bt = config.RESULTS_DIR / "backtest" / f"scenario{scenario}"
@@ -220,7 +367,12 @@ def compute_etp_cached(casc_df, hourly_df, stores_df, params_tuple):
 
 TABLES, UPLIFT_REF = load_static()
 STORES = TABLES["stores"]
-STORE_NAME = STORES.set_index("store_id").store_name
+# Simple dict (et non STORES.set_index(...).store_name) : avec pandas 3 les
+# colonnes texte sont adossées à Arrow, et un set_index sur un objet restitué
+# par le cache Streamlit provoquait un SEGFAULT de pyarrow — le serveur mourait
+# à chaque changement de page (seul le Guide, qui n'y touche pas, s'affichait).
+# .tolist() ramène des objets Python natifs : plus aucune opération Arrow ici.
+STORE_NAME = dict(zip(STORES["store_id"].tolist(), STORES["store_name"].tolist()))
 
 
 # --------------------------------------------------------------------------- #
@@ -507,121 +659,194 @@ def page_ca():
         method="On prolonge l'historique produit par produit, puis on remonte la cascade "
                "<b>volume → panier moyen → CA net</b>. Vous pouvez tester vos propres hypothèses ou "
                "une campagne promo (encart repliable plus bas)&nbsp;: tout se recalcule.",
-        read="Les <b>barres</b> = le CA net simulé mois par mois&nbsp;; la <b>ligne orange</b> = la "
-             "proposition de l'outil, sans ajustement&nbsp;; la <b>zone ombrée</b> = la fourchette "
-             "P10–P90 (dans 8 cas sur 10, le réel tombe dedans). La <b>fiabilité (WAPE)</b> rappelle "
-             "l'erreur moyenne mesurée sur le passé — plus le % est bas, mieux c'est.",
-        good="Une fourchette resserrée autour de la prévision (les aléas se compensent au cumul), un "
-             "WAPE nettement sous la prévision naïve, et un profil mensuel cohérent avec la saison.")
+        read="Les <b>barres</b> = le CA net prévu mois par mois&nbsp;; la <b>zone ombrée</b> = la "
+             "fourchette P10–P90 (dans 8 cas sur 10, le réel tombe dedans). Le KPI "
+             "<b>Erreur moyenne (WAPE)</b> est un taux d'<b>erreur</b>&nbsp;: plus il est bas, "
+             "meilleure est la prévision. Si vous testez des ajustements (encart en bas), une "
+             "<b>ligne orange</b> apparaît pour montrer la prévision d'origine.",
+        good="Une fourchette resserrée autour de la prévision (les aléas se compensent au cumul), une "
+             "erreur nettement sous celle de la prévision naïve, et un profil mensuel cohérent avec "
+             "la saison.")
 
     cv, cbv = ctx["casc_view"], ctx["casc_base_view"]
     ca_scn, ca_ref = cv.ca_net.sum(), cbv.ca_net.sum()
     delta = ca_scn / ca_ref - 1 if ca_ref else 0
-    wape_txt, wape_main = "—", "—"
+    ajuste = abs(delta) > 1e-9        # l'utilisateur a-t-il modifié quelque chose ?
+    err_main, err_sub = "—", ""
     if ctx["RES"]["summary"] is not None:
         s = ctx["RES"]["summary"]
         wh = s.loc[s.modele == "hybride", "WAPE"].iloc[0]
         wn = s.loc[s.modele == "naive_saiso", "WAPE"].iloc[0]
-        wape_main, wape_txt = f"{wh:.1%}", f"{wh:.1%} · naïve {wn:.1%}"
+        err_main = pct(wh)
+        err_sub = f"vs {pct(wn)} pour une prévision naïve"
 
     k1, k2, k3, k4 = st.columns(4)
-    k1.markdown(f'<div class="kpi"><div class="kpi-l">CA net simulé — S2 {YEAR}</div>'
-                f'<div class="kpi-v">{ca_scn/1e6:,.2f} M€</div>'
-                f'<div class="kpi-d" style="color:{OK if delta>=0 else ORANGE}">'
-                f'{delta:+.1%} vs proposition outil</div></div>', unsafe_allow_html=True)
-    k2.markdown(f'<div class="kpi"><div class="kpi-l">Proposition de l\'outil</div>'
-                f'<div class="kpi-v">{ca_ref/1e6:,.2f} M€</div>'
-                f'<div class="kpi-d" style="color:{MUTED}">hypothèses neutres</div></div>',
-                unsafe_allow_html=True)
-    k3.markdown(f'<div class="kpi"><div class="kpi-l">Fiabilité (WAPE)</div>'
-                f'<div class="kpi-v">{wape_main}</div>'
-                f'<div class="kpi-d" style="color:{MUTED}">{wape_txt}</div></div>',
-                unsafe_allow_html=True)
+    # KPI 1 — le chiffre principal
+    k1.markdown(f'<div class="kpi"><div class="kpi-l">CA net prévu — S2 {YEAR}</div>'
+                f'<div class="kpi-v">{eur(ca_scn)}</div>'
+                f'<div class="kpi-d" style="color:{OK_TEXT if delta >= 0 else ORANGE_TEXT}">'
+                + (f'{pct(delta, 1, signe=True)} vs sans ajustement' if ajuste
+                   else f'<span style="color:{MUTED}">aucun ajustement appliqué</span>')
+                + '</div></div>', unsafe_allow_html=True)
+    # KPI 2 — n'a de sens QUE si l'utilisateur a ajusté ; sinon c'est le même
+    # chiffre affiché deux fois (source de confusion signalée en démo).
+    if ajuste:
+        k2.markdown(f'<div class="kpi"><div class="kpi-l">Sans vos ajustements</div>'
+                    f'<div class="kpi-v">{eur(ca_ref)}</div>'
+                    f'<div class="kpi-d" style="color:{MUTED}">prévision brute de l\'outil</div></div>',
+                    unsafe_allow_html=True)
+    else:
+        tr = cv.transactions.sum()
+        k2.markdown(f'<div class="kpi"><div class="kpi-l">Transactions prévues</div>'
+                    f'<div class="kpi-v">{fr(tr / 1e3, 0)}{NBSP}k</div>'
+                    f'<div class="kpi-d" style="color:{MUTED}">panier moyen '
+                    f'{eur(ca_scn / max(tr, 1), 2)}</div></div>', unsafe_allow_html=True)
+    # KPI 3 — ATTENTION : le WAPE est une ERREUR. L'ancien libellé « Fiabilité :
+    # 69,4 % » se lisait « fiable à 69 % » alors que c'est l'inverse.
+    k3.markdown(f'<div class="kpi"><div class="kpi-l">Erreur moyenne (WAPE)</div>'
+                f'<div class="kpi-v">{err_main}</div>'
+                f'<div class="kpi-d" style="color:{MUTED}">plus c\'est bas, mieux c\'est · '
+                f'{err_sub}</div></div>', unsafe_allow_html=True)
     factors = load_pi_factors(ctx["scenario"])
     band = ca_band_by_month(cv, factors)
     total_band = ca_band_total(cv, factors)
     if total_band is not None:
         _, tlo, thi = total_band
         k4.markdown(f'<div class="kpi"><div class="kpi-l">Fourchette S2 (P10–P90)</div>'
-                    f'<div class="kpi-v">{tlo/1e6:,.2f} – {thi/1e6:,.2f} M€</div>'
-                    f'<div class="kpi-d" style="color:{MUTED}">80&nbsp;% de chances (calibré backtest)'
-                    f'</div></div>', unsafe_allow_html=True)
+                    f'<div class="kpi-v">{eur(tlo)} – {eur(thi)}</div>'
+                    f'<div class="kpi-d" style="color:{MUTED}">8 chances sur 10 d\'être '
+                    f'dans cette plage</div></div>', unsafe_allow_html=True)
     else:
-        k4.markdown(f'<div class="kpi"><div class="kpi-l">Transactions prévues</div>'
-                    f'<div class="kpi-v">{cv.transactions.sum()/1e3:,.0f} k</div>'
-                    f'<div class="kpi-d" style="color:{MUTED}">panier moyen '
-                    f'{cv.ca_net.sum()/max(cv.transactions.sum(),1):,.1f} €</div></div>',
+        k4.markdown(f'<div class="kpi"><div class="kpi-l">Fourchette S2 (P10–P90)</div>'
+                    f'<div class="kpi-v">—</div>'
+                    f'<div class="kpi-d" style="color:{MUTED}">non calibrée</div></div>',
                     unsafe_allow_html=True)
 
+    st.markdown('<div class="sec">Chiffre d\'affaires net prévu, mois par mois</div>',
+                unsafe_allow_html=True)
     mm = cascade_monthly_cached(cv)
     mm_base = cascade_monthly_cached(cbv)
+    ser = mm.groupby("month").ca_net.sum()
+    # Axe en MILLIONS d'euros : un axe en euros bruts affichait « 1200000 »,
+    # illisible. On trace donc en M€ et on remet le montant exact au survol.
+    xs = [mois_fr(m) for m in ser.index]
     mfig = go.Figure()
-    # bande P10–P90 (derrière les barres) : incertitude de la prévision, calibrée
-    # sur le backtest — se resserre au cumul mensuel car les aléas se compensent.
     if band is not None:
-        mfig.add_scatter(x=band.month, y=band.hi, mode="lines", line=dict(width=0),
+        bx = [mois_fr(m) for m in band.month]
+        mfig.add_scatter(x=bx, y=band.hi / 1e6, mode="lines", line=dict(width=0),
                          hoverinfo="skip", showlegend=False)
-        mfig.add_scatter(x=band.month, y=band.lo, mode="lines", line=dict(width=0),
+        mfig.add_scatter(x=bx, y=band.lo / 1e6, mode="lines", line=dict(width=0),
                          fill="tonexty", fillcolor="rgba(33,25,72,0.13)",
-                         name="Fourchette P10–P90", hoverinfo="skip")
-    mfig.add_bar(x=mm.groupby("month").ca_net.sum().index,
-                 y=mm.groupby("month").ca_net.sum().values, name="CA net simulé", marker_color=NAVY)
-    mfig.add_scatter(x=mm_base.groupby("month").ca_net.sum().index,
-                     y=mm_base.groupby("month").ca_net.sum().values, name="Proposition de l'outil",
-                     mode="lines+markers", line=dict(color=ORANGE, width=3))
-    mfig.update_layout(height=340, margin=dict(l=10, r=10, t=30, b=10), plot_bgcolor="#fff",
-                       paper_bgcolor="rgba(0,0,0,0)", legend=dict(orientation="h"))
+                         name="Fourchette P10–P90 (8 chances sur 10)", hoverinfo="skip")
+    mfig.add_bar(x=xs, y=ser.values / 1e6, name="CA net prévu", marker_color=NAVY,
+                 customdata=[eur(v) for v in ser.values],
+                 hovertemplate="<b>%{x}</b><br>CA net prévu : %{customdata}<extra></extra>")
+    # La courbe « sans ajustement » n'est tracée QUE si l'utilisateur a ajusté
+    # quelque chose : sinon elle se superpose exactement aux barres (deux séries
+    # identiques = confusion inutile).
+    if ajuste:
+        base = mm_base.groupby("month").ca_net.sum()
+        mfig.add_scatter(x=[mois_fr(m) for m in base.index], y=base.values / 1e6,
+                         name="Sans vos ajustements", mode="lines+markers",
+                         line=dict(color=ORANGE, width=3),
+                         customdata=[eur(v) for v in base.values],
+                         hovertemplate="<b>%{x}</b><br>Sans ajustement : %{customdata}"
+                                       "<extra></extra>")
+    mfig.update_layout(height=360, margin=dict(l=10, r=10, t=30, b=10), plot_bgcolor="#fff",
+                       paper_bgcolor="rgba(0,0,0,0)",
+                       legend=dict(orientation="h", y=-0.18), **PLOTLY_FR)
+    mfig.update_yaxes(title_text="CA net du mois (millions d'euros)", tickformat=",.1f",
+                      ticksuffix=" M€", gridcolor=LINE, zeroline=False)
+    mfig.update_xaxes(title_text="", type="category")
     st.plotly_chart(mfig, use_container_width=True)
     if band is not None:
-        st.caption("La zone ombrée est la **fourchette P10–P90** : dans 8 cas sur 10, la vente réelle "
-                   "devrait tomber dedans. Elle est calibrée sur les erreurs passées (backtest) et "
-                   "s'élargit avec l'horizon (mois plus lointains = plus incertains).")
+        st.caption("Lecture — **barres** : le CA net prévu chaque mois. **Zone ombrée** : la fourchette "
+                   "P10–P90, calibrée sur les erreurs passées ; dans 8 cas sur 10 le réel devrait y "
+                   "tomber. Elle s'élargit avec l'horizon : décembre est plus incertain que juillet.")
 
     # ------ contrôles facultatifs, repliés par défaut pour garder la page nette ------
-    with st.expander("**Tester des hypothèses ou une promotion (facultatif)**"):
-        st.markdown('<div class="expl" style="box-shadow:none;padding:0 0 10px">Par défaut, l\'outil '
-                    'utilise ses propres hypothèses. Ici, vous pouvez tester une variante — les '
-                    'valeurs sont des <b>multiplicateurs</b> (1,00 = inchangé, 1,02 = +2 %). '
-                    'Le CA et l\'atterrissage se recalculent partout.</div>', unsafe_allow_html=True)
+    with st.expander("**Simuler : « et si… ? » — tester des hypothèses ou une promotion "
+                     "(facultatif)**"):
+        st.markdown('<div class="expl" style="box-shadow:none;padding:0 0 10px">'
+                    'Ces deux encadrés servent à <b>tester un scénario</b>. Tant que vous n\'y touchez '
+                    'pas, l\'outil affiche sa prévision brute. Dès que vous modifiez quelque chose, '
+                    '<b>tous les chiffres et graphiques de l\'application se recalculent</b> (y compris '
+                    'l\'atterrissage), et une <b>ligne orange</b> apparaît sur le graphique pour '
+                    'rappeler la prévision d\'origine.</div>', unsafe_allow_html=True)
         hcol, pcol = st.columns([1.15, 1])
         with hcol:
-            st.caption("Hypothèses mois par mois. « Δ inflation » = point d'inflation ajouté/retiré "
-                       "par rapport à la trajectoire déjà intégrée aux prix.")
+            st.markdown("**A · Ajuster les hypothèses, mois par mois**")
+            st.caption("Chaque valeur est un **multiplicateur** : 1,00 = inchangé · 1,02 = +2 % · "
+                       "0,95 = −5 %. **PV** = prix de vente, **PA** = articles par ticket. "
+                       "« Δ inflation » = points d'inflation ajoutés ou retirés par rapport à la "
+                       "trajectoire déjà intégrée aux prix (0 = on ne touche à rien).")
             hyp = st.data_editor(
                 st.session_state.hyp, hide_index=True, use_container_width=True,
                 column_config={
                     "month": st.column_config.TextColumn("Mois", disabled=True),
-                    "coef_pv": st.column_config.NumberColumn("PV ×", min_value=0.5, max_value=1.5, step=0.01),
-                    "coef_pa": st.column_config.NumberColumn("PA ×", min_value=0.5, max_value=1.5, step=0.01),
-                    "coef_transactions": st.column_config.NumberColumn("Transactions ×", min_value=0.5,
-                                                                       max_value=1.5, step=0.01),
-                    "inflation_delta_pct": st.column_config.NumberColumn("Δ inflation %", min_value=-5.0,
-                                                                         max_value=5.0, step=0.1),
+                    "coef_pv": st.column_config.NumberColumn(
+                        "PV ×", min_value=0.5, max_value=1.5, step=0.01,
+                        help="Multiplicateur du prix de vente moyen."),
+                    "coef_pa": st.column_config.NumberColumn(
+                        "PA ×", min_value=0.5, max_value=1.5, step=0.01,
+                        help="Multiplicateur du nombre d'articles par ticket."),
+                    "coef_transactions": st.column_config.NumberColumn(
+                        "Transactions ×", min_value=0.5, max_value=1.5, step=0.01,
+                        help="Multiplicateur du nombre de tickets (la fréquentation)."),
+                    "inflation_delta_pct": st.column_config.NumberColumn(
+                        "Δ inflation %", min_value=-5.0, max_value=5.0, step=0.1,
+                        help="Écart d'inflation en points, en plus ou en moins."),
                 })
             st.session_state.hyp = hyp
         with pcol:
-            st.caption("Simuler une campagne promotionnelle : l'outil propose une hausse des ventes "
-                       "issue de l'historique, modifiable avant application.")
+            st.markdown("**B · Simuler une campagne promotionnelle**")
+            st.caption("Décrivez la campagne : l'outil propose une hausse des ventes déduite de "
+                       "l'historique des promos similaires, que vous pouvez corriger. "
+                       "Rien n'est appliqué tant que vous n'avez pas cliqué sur le bouton.")
             with st.form("promo_form"):
                 f1, f2 = st.columns(2)
-                p_name = f1.text_input("Nom de campagne", "Ma campagne test")
-                p_type = f2.selectbox("Type de promotion", config.PROMO_TYPES)
+                p_name = f1.text_input("Nom de la campagne", "Ma campagne test",
+                                       help="Sert uniquement à vous repérer.")
+                p_type = f2.selectbox("Type de promotion", config.PROMO_TYPES,
+                                      help="Chaque type a un effet différent : une remise crée un pic "
+                                           "puis un creux, une opération influenceur agit avec ~1 mois "
+                                           "de décalage, etc.")
                 f3, f4, f5 = st.columns(3)
                 p_start = f3.date_input("Début", pd.Timestamp(f"{YEAR}-10-01"),
                                         min_value=pd.Timestamp(config.HIST_END) + pd.Timedelta(days=1),
-                                        max_value=pd.Timestamp(config.FORECAST_END))
+                                        max_value=pd.Timestamp(config.FORECAST_END),
+                                        help="Premier jour de la campagne.")
                 p_end = f4.date_input("Fin", pd.Timestamp(f"{YEAR}-10-14"),
                                       min_value=pd.Timestamp(config.HIST_END) + pd.Timedelta(days=1),
-                                      max_value=pd.Timestamp(config.FORECAST_END))
-                p_perim = f5.selectbox("Périmètre", ["omnicanal", "magasin", "online"])
-                p_disc = st.slider("Niveau de remise (pour une promo de type 'produits')", 0.0, 0.5, 0.20, 0.05)
-                p_cat = st.multiselect("Familles ciblées",
+                                      max_value=pd.Timestamp(config.FORECAST_END),
+                                      help="Dernier jour de la campagne.")
+                p_perim = f5.selectbox("Périmètre", ["omnicanal", "magasin", "online"],
+                                       help="Où la campagne s'applique : partout (omnicanal), "
+                                            "en magasin seulement, ou sur le site seulement.")
+                # Sliders en POURCENTAGES ENTIERS : en flottants, Streamlit
+                # affichait « 0.20 » / « 1.47 » (décimales anglaises, et valeur
+                # illisible car écrite en orange sur le curseur orange). Un entier
+                # « 20 % » est à la fois lisible et plus parlant qu'un multiplicateur.
+                p_disc_pct = st.slider(
+                    "Niveau de remise (%)", 0, 50, 20, 5,
+                    help="Utilisé uniquement par le type « produits » : 20 = 20 % de remise.")
+                p_disc = p_disc_pct / 100
+                p_cat = st.multiselect("Familles de produits ciblées",
                                        sorted(TABLES["products"].commodity_group.unique()),
-                                       default=["Chien"])
+                                       default=["Chien"],
+                                       help="La campagne ne touchera que ces familles.")
                 proposed = propose_uplift(UPLIFT_REF, p_type, p_disc)
-                p_uplift = st.slider(f"Hausse des ventes attendue (proposée par l'outil : ×{proposed})",
-                                     0.8, 3.0, float(proposed), 0.05)
-                p_apply = st.form_submit_button("Appliquer la campagne")
+                prop_pct = int(round((float(proposed) - 1) * 100))
+                p_uplift_pct = st.slider(
+                    "Hausse des ventes attendue (%)", -20, 200, prop_pct, 5,
+                    help="Combien de ventes en plus la campagne apporte sur le périmètre ciblé. "
+                         "50 = +50 % de ventes. L'outil pré-remplit cette valeur d'après "
+                         "l'historique des promos du même type ; corrigez-la si besoin.")
+                p_uplift = 1 + p_uplift_pct / 100
+                st.caption(f"Proposition de l'outil pour ce type de promo : "
+                           f"**{'+' if prop_pct >= 0 else ''}{prop_pct}{NBSP}%** de ventes "
+                           f"(médiane observée dans l'historique).")
+                p_apply = st.form_submit_button("Appliquer la campagne à la prévision")
         if p_apply:
             skus = TABLES["products"].loc[
                 TABLES["products"].commodity_group.isin(p_cat), "sku_id"].tolist()
@@ -672,55 +897,74 @@ def page_atterrissage():
     reel_m = reel.assign(month=reel.date.dt.to_period("M").astype(str)).groupby("month").revenue.sum()
     prev_m = mm.groupby("month").ca_net.sum()
 
-    total = (reel_m.sum() + prev_m.sum()) / 1e6
+    total = reel_m.sum() + prev_m.sum()
     # fourchette : seule la partie prévue (juil–déc) est incertaine ; le réel est acquis.
     factors = load_pi_factors(ctx["scenario"])
     band_total = ca_band_total(ctx["casc_view"], factors)
     k1, k2, k3 = st.columns(3)
     if band_total is not None:
         _, plo, phi = band_total
-        alo, ahi = (reel_m.sum() + plo) / 1e6, (reel_m.sum() + phi) / 1e6
         k1.markdown(f'<div class="kpi"><div class="kpi-l">Atterrissage {YEAR}</div>'
-                    f'<div class="kpi-v">{total:,.2f} M€</div>'
-                    f'<div class="kpi-d" style="color:{MUTED}">fourchette P10–P90&nbsp;: '
-                    f'{alo:,.2f} – {ahi:,.2f} M€</div></div>', unsafe_allow_html=True)
+                    f'<div class="kpi-v">{eur(total)}</div>'
+                    f'<div class="kpi-d" style="color:{MUTED}">fourchette&nbsp;: '
+                    f'{eur(reel_m.sum() + plo)} – {eur(reel_m.sum() + phi)}</div></div>',
+                    unsafe_allow_html=True)
     else:
         k1.markdown(f'<div class="kpi"><div class="kpi-l">Atterrissage {YEAR}</div>'
-                    f'<div class="kpi-v">{total:,.2f} M€</div>'
+                    f'<div class="kpi-v">{eur(total)}</div>'
                     f'<div class="kpi-d" style="color:{MUTED}">année entière estimée</div></div>',
                     unsafe_allow_html=True)
     k2.markdown(f'<div class="kpi"><div class="kpi-l">Déjà réalisé (janv–juin)</div>'
-                f'<div class="kpi-v">{reel_m.sum()/1e6:,.2f} M€</div>'
-                f'<div class="kpi-d" style="color:{OK}">observé</div></div>', unsafe_allow_html=True)
+                f'<div class="kpi-v">{eur(reel_m.sum())}</div>'
+                f'<div class="kpi-d" style="color:{OK_TEXT}">observé — chiffre acquis</div></div>',
+                unsafe_allow_html=True)
     if band_total is not None:
         _, plo, phi = band_total
         k3.markdown(f'<div class="kpi"><div class="kpi-l">Reste à faire (juil–déc)</div>'
-                    f'<div class="kpi-v">{prev_m.sum()/1e6:,.2f} M€</div>'
-                    f'<div class="kpi-d" style="color:{MUTED}">prévu · P10–P90&nbsp;: '
-                    f'{plo/1e6:,.2f} – {phi/1e6:,.2f} M€</div></div>', unsafe_allow_html=True)
+                    f'<div class="kpi-v">{eur(prev_m.sum())}</div>'
+                    f'<div class="kpi-d" style="color:{MUTED}">prévu · fourchette '
+                    f'{eur(plo)} – {eur(phi)}</div></div>', unsafe_allow_html=True)
     else:
         k3.markdown(f'<div class="kpi"><div class="kpi-l">Reste à faire (juil–déc)</div>'
-                    f'<div class="kpi-v">{prev_m.sum()/1e6:,.2f} M€</div>'
+                    f'<div class="kpi-v">{eur(prev_m.sum())}</div>'
                     f'<div class="kpi-d" style="color:{MUTED}">prévu</div></div>',
                     unsafe_allow_html=True)
 
+    st.markdown('<div class="sec">Mois par mois — ce qui est acquis, puis ce qui est prévu</div>',
+                unsafe_allow_html=True)
     afig = go.Figure()
-    afig.add_bar(x=reel_m.index, y=reel_m.values, name="Réel (janv–juin)", marker_color=OK)
-    afig.add_bar(x=prev_m.index, y=prev_m.values, name="Prévision (juil–déc)", marker_color=NAVY)
-    # barres d'incertitude P10–P90 sur les mois prévus
+    afig.add_bar(x=[mois_fr(m) for m in reel_m.index], y=reel_m.values / 1e6,
+                 name="Réel encaissé (janv–juin)", marker_color=OK,
+                 customdata=[eur(v) for v in reel_m.values],
+                 hovertemplate="<b>%{x}</b><br>Réel encaissé : %{customdata}<extra></extra>")
+    afig.add_bar(x=[mois_fr(m) for m in prev_m.index], y=prev_m.values / 1e6,
+                 name="Prévision (juil–déc)", marker_color=NAVY,
+                 customdata=[eur(v) for v in prev_m.values],
+                 hovertemplate="<b>%{x}</b><br>Prévu : %{customdata}<extra></extra>")
+    # Moustaches d'incertitude sur les mois prévus. Le marqueur porteur est
+    # invisible (size=1, opacity=0) : on le sort donc de la légende, où il
+    # apparaissait comme une entrée vide et incompréhensible.
     band = ca_band_by_month(ctx["casc_view"], factors)
     if band is not None:
         bm = band.set_index("month").reindex(prev_m.index)
-        afig.add_scatter(x=prev_m.index, y=prev_m.values, mode="markers",
-                         marker=dict(color=NAVY, size=1, opacity=0),
+        afig.add_scatter(x=[mois_fr(m) for m in prev_m.index], y=prev_m.values / 1e6,
+                         mode="markers", marker=dict(color=NAVY, size=1, opacity=0),
                          error_y=dict(type="data", symmetric=False,
-                                      array=(bm.hi - bm.point).values,
-                                      arrayminus=(bm.point - bm.lo).values,
-                                      color=INK_SOFT, thickness=1.5, width=4),
-                         name="Fourchette P10–P90", hoverinfo="skip")
-    afig.update_layout(height=340, margin=dict(l=10, r=10, t=30, b=10), plot_bgcolor="#fff",
-                       paper_bgcolor="rgba(0,0,0,0)", legend=dict(orientation="h"))
+                                      array=((bm.hi - bm.point) / 1e6).values,
+                                      arrayminus=((bm.point - bm.lo) / 1e6).values,
+                                      color=INK_SOFT, thickness=1.5, width=5),
+                         showlegend=False, hoverinfo="skip")
+    afig.update_layout(height=360, margin=dict(l=10, r=10, t=30, b=10), plot_bgcolor="#fff",
+                       paper_bgcolor="rgba(0,0,0,0)",
+                       legend=dict(orientation="h", y=-0.18), **PLOTLY_FR)
+    afig.update_yaxes(title_text="CA net du mois (millions d'euros)", tickformat=",.1f",
+                      ticksuffix=" M€", gridcolor=LINE, zeroline=False)
+    afig.update_xaxes(type="category")
     st.plotly_chart(afig, use_container_width=True)
+    st.caption("Lecture — **barres vertes** : ce qui est déjà encaissé, donc certain. "
+               "**Barres bleues** : la prévision, avec sa fourchette P10–P90 (les moustaches "
+               "verticales). Les moustaches s'allongent vers décembre : plus c'est loin, plus "
+               "c'est incertain.")
 
 
 # --------------------------------------------------------------------------- #
@@ -745,11 +989,30 @@ def page_etp():
         good="Un classement des magasins cohérent avec leur taille, et une courbe journalière qui "
              "suit les heures d'affluence (le canal Online est exclu — pas de magasin physique).")
 
+    st.markdown('<div class="sec">Les règles de calcul — modifiez-les pour voir l\'impact</div>',
+                unsafe_allow_html=True)
+    st.caption("Ces 4 valeurs sont des **hypothèses de travail** 🟡, à caler avec le métier. "
+               "Chaque modification recalcule immédiatement les deux graphiques ci-dessous.")
     e1, e2, e3, e4 = st.columns(4)
-    p_ca = e1.number_input("€ CA / heure-vendeur **(hypothèse)**", 100.0, 500.0, float(ETP_DEFAULTS["prod_ca_per_hour"]), 10.0)
-    p_tk = e2.number_input("Tickets / heure-vendeur **(hypothèse)**", 5.0, 30.0, float(ETP_DEFAULTS["tickets_per_hour"]), 1.0)
-    p_min = e3.number_input("Effectif minimum / h **(hypothèse)**", 1.0, 5.0, float(ETP_DEFAULTS["min_staff"]), 0.5)
-    p_hm = e4.number_input("Heures / mois / ETP", 100.0, 200.0, float(ETP_DEFAULTS["hours_per_month"]), 0.01)
+    p_ca = e1.number_input(
+        "CA par heure-vendeur (€)", 100.0, 500.0,
+        float(ETP_DEFAULTS["prod_ca_per_hour"]), 10.0, format="%.0f",
+        help="Combien d'euros de chiffre d'affaires un vendeur peut absorber en une heure. "
+             "Plus la valeur est haute, moins il faut de vendeurs.")
+    p_tk = e2.number_input(
+        "Tickets par heure-vendeur", 5.0, 30.0,
+        float(ETP_DEFAULTS["tickets_per_hour"]), 1.0, format="%.0f",
+        help="Combien de passages en caisse un vendeur traite en une heure. "
+             "C'est la 2ᵉ contrainte : on retient le besoin le plus élevé des deux.")
+    p_min = e3.number_input(
+        "Effectif minimum par heure", 1.0, 5.0,
+        float(ETP_DEFAULTS["min_staff"]), 0.5, format="%.1f",
+        help="Plancher de sécurité : nombre de personnes présentes même quand le magasin est vide.")
+    p_hm = e4.number_input(
+        "Heures par mois pour 1 ETP", 100.0, 200.0,
+        float(ETP_DEFAULTS["hours_per_month"]), 1.0, format="%.2f",
+        help="Durée mensuelle d'un temps plein (35 h/semaine = 151,67 h/mois). "
+             "Sert à convertir des heures de travail en nombre de personnes.")
 
     params = (("prod_ca_per_hour", p_ca), ("tickets_per_hour", p_tk),
               ("min_staff", p_min), ("hours_per_month", p_hm))
@@ -757,26 +1020,45 @@ def page_etp():
     etp_avg = etp_monthly.groupby("store_id").etp.mean().sort_values(ascending=False)
 
     st.markdown('<div class="sec">Effectif moyen nécessaire, par magasin</div>', unsafe_allow_html=True)
-    efig = go.Figure(go.Bar(x=etp_avg.index, y=etp_avg.values, marker_color=NAVY,
-                            text=etp_avg.round(1), textposition="outside"))
-    efig.update_layout(height=320, margin=dict(l=10, r=10, t=20, b=10), plot_bgcolor="#fff",
-                       paper_bgcolor="rgba(0,0,0,0)", yaxis_title=f"ETP moyen / mois (S2 {YEAR})")
+    efig = go.Figure(go.Bar(
+        x=[STORE_NAME.get(s, s) for s in etp_avg.index], y=etp_avg.values,
+        marker_color=NAVY, text=[fr(v, 1) for v in etp_avg.values], textposition="outside",
+        customdata=[[s, fr(v, 1)] for s, v in zip(etp_avg.index, etp_avg.values)],
+        hovertemplate="<b>%{x}</b> (%{customdata[0]})<br>"
+                      "%{customdata[1]} personnes à temps plein<extra></extra>"))
+    # marge gauche explicite : le titre d'axe était tronqué (« … par m »)
+    efig.update_layout(height=360, margin=dict(l=70, r=10, t=30, b=80), plot_bgcolor="#fff",
+                       paper_bgcolor="rgba(0,0,0,0)", **PLOTLY_FR)
+    efig.update_yaxes(title_text="ETP moyen par mois", gridcolor=LINE, zeroline=False)
+    efig.update_xaxes(tickangle=-40)
     st.plotly_chart(efig, use_container_width=True)
+    st.caption(f"Lecture — un **ETP** = un salarié à temps plein. « {fr(etp_avg.iloc[0], 1)} » pour "
+               f"le 1ᵉʳ magasin signifie qu'il faut l'équivalent de {fr(etp_avg.iloc[0], 1)} personnes "
+               "à temps plein en moyenne sur le semestre. Le canal Online est absent : pas de "
+               "magasin physique.")
 
     etp_store = ctx["sel_store"] if ctx["sel_store"] != "Tous" else etp_avg.index[0]
-    st.markdown(f'<div class="sec">Répartition sur une journée type — samedi, '
-                f'{store_label(etp_store)}</div>', unsafe_allow_html=True)
-    st.markdown('<div class="expl" style="box-shadow:none;padding:0 0 8px">Nombre de personnes '
-                'nécessaires heure par heure&nbsp;: sert à dimensionner les plannings.</div>',
+    auto = ctx["sel_store"] == "Tous"
+    st.markdown(f'<div class="sec">Une journée type (samedi) — {store_label(etp_store)}</div>',
                 unsafe_allow_html=True)
+    st.caption(("Aucun magasin n'étant sélectionné, on montre ici **le plus gros du réseau**. "
+                "Choisissez un magasin dans le menu de gauche pour voir le sien. " if auto else "")
+               + "Le samedi est le jour le plus chargé : c'est lui qui dimensionne le planning.")
     day_prof = (etp_hourly[etp_hourly.store_id == etp_store]
                 .assign(dow=lambda d: pd.to_datetime(d.date).dt.dayofweek)
                 .query("dow == 5").groupby("hour").staff.mean())
-    pfig = go.Figure(go.Scatter(x=day_prof.index, y=day_prof.values, fill="tozeroy",
-                                line=dict(color=ORANGE, width=3)))
-    pfig.update_layout(height=260, margin=dict(l=10, r=10, t=20, b=10), plot_bgcolor="#fff",
-                       paper_bgcolor="rgba(0,0,0,0)", xaxis_title="heure", yaxis_title="personnes")
+    pfig = go.Figure(go.Scatter(
+        x=[f"{h}h" for h in day_prof.index], y=day_prof.values, fill="tozeroy",
+        line=dict(color=ORANGE, width=3), mode="lines+markers",
+        customdata=[fr(v, 1) for v in day_prof.values],
+        hovertemplate="<b>%{x}</b><br>%{customdata} personnes en rayon<extra></extra>"))
+    pfig.update_layout(height=280, margin=dict(l=60, r=10, t=20, b=40), plot_bgcolor="#fff",
+                       paper_bgcolor="rgba(0,0,0,0)", **PLOTLY_FR)
+    pfig.update_xaxes(title_text="Heure de la journée", type="category")
+    pfig.update_yaxes(title_text="Personnes en rayon", gridcolor=LINE, zeroline=False)
     st.plotly_chart(pfig, use_container_width=True)
+    st.caption("Lecture — hauteur = nombre de personnes à avoir en rayon à cette heure-là. "
+               "Le creux du midi et le pic de l'après-midi sortent des données de fréquentation.")
 
 
 # --------------------------------------------------------------------------- #
@@ -794,9 +1076,9 @@ def page_ecarts():
                "<b>le prix</b> (vendu plus ou moins cher), <b>le volume</b> (plus ou moins d'unités), "
                "<b>le mix</b> (produits plus ou moins chers que d'habitude). L'écart de volume est "
                "ensuite reventilé entre promotions, calendrier et reste.",
-        read="Le graphique en cascade part du <b>CA prévu</b> (gauche) et arrive au <b>CA réel</b> "
-             "(droite)&nbsp;: chaque marche est une cause, verte si elle ajoute, orange si elle "
-             "retranche. Les trois tuiles du bas détaillent l'écart de volume.",
+        read="La page se lit en 3 temps&nbsp;: <b>1</b> le constat (prévu, réel, écart), "
+             "<b>2</b> les 3 causes de l'écart (vert = a fait gagner du CA, orange = a fait perdre), "
+             "<b>3</b> le détail de l'effet volume.",
         good="Des écarts qui s'expliquent par des causes identifiables (une promo, un jour férié) "
              "plutôt que par un gros « autre » inexpliqué.")
 
@@ -811,28 +1093,69 @@ def page_ecarts():
         return
     agg = ec[["ca_prev", "effet_prix", "effet_volume", "effet_mix"]].sum()
     drivers = ec[["dont_promo", "dont_calendaire", "dont_autre"]].sum()
+    ca_prev = float(agg.ca_prev)
+    ecart = float(agg.effet_prix + agg.effet_volume + agg.effet_mix)
+    ca_reel = ca_prev + ecart
 
-    wfig = go.Figure(go.Waterfall(
-        orientation="v",
-        measure=["absolute", "relative", "relative", "relative", "total"],
-        x=["CA prévu", "Effet prix", "Effet volume", "Effet mix", "CA réel"],
-        y=[agg.ca_prev, agg.effet_prix, agg.effet_volume, agg.effet_mix, 0],
-        connector=dict(line=dict(color=LINE)),
-        increasing=dict(marker=dict(color=OK)), decreasing=dict(marker=dict(color=ORANGE)),
-        totals=dict(marker=dict(color=NAVY))))
-    wfig.update_layout(height=360, margin=dict(l=10, r=10, t=30, b=10), plot_bgcolor="#fff",
-                       paper_bgcolor="rgba(0,0,0,0)")
-    st.plotly_chart(wfig, use_container_width=True)
+    # --- 1. Les TOTAUX en KPI ------------------------------------------------- #
+    # Ils étaient auparavant dans le même graphique que les écarts : des barres de
+    # ~3 M€ à côté d'effets de ~40 k€ écrasaient totalement ces derniers (invisibles).
+    # On sépare : les totaux ici, les écarts dans leur propre graphique ci-dessous.
+    st.markdown('<div class="sec">1 · Le constat — prévu contre réel</div>', unsafe_allow_html=True)
+    t1, t2, t3 = st.columns(3)
+    t1.markdown(f'<div class="kpi"><div class="kpi-l">CA prévu</div>'
+                f'<div class="kpi-v">{eur(ca_prev)}</div>'
+                f'<div class="kpi-d" style="color:{MUTED}">ce que l\'outil annonçait</div></div>',
+                unsafe_allow_html=True)
+    t2.markdown(f'<div class="kpi"><div class="kpi-l">CA réel</div>'
+                f'<div class="kpi-v">{eur(ca_reel)}</div>'
+                f'<div class="kpi-d" style="color:{OK_TEXT}">ce qui a été encaissé</div></div>',
+                unsafe_allow_html=True)
+    t3.markdown(f'<div class="kpi"><div class="kpi-l">Écart total</div>'
+                f'<div class="kpi-v" style="color:{OK_TEXT if ecart >= 0 else ORANGE_TEXT}">'
+                f'{"+" if ecart >= 0 else "−"}{eur(abs(ecart))}</div>'
+                f'<div class="kpi-d" style="color:{MUTED}">soit '
+                f'{pct(ecart / ca_prev if ca_prev else 0, 1, signe=True)} du CA prévu</div></div>',
+                unsafe_allow_html=True)
 
-    st.markdown('<div class="sec">Détail de l\'écart de volume</div>', unsafe_allow_html=True)
+    # --- 2. D'où vient l'écart : graphique dédié, à l'échelle des écarts ------ #
+    st.markdown('<div class="sec">2 · D\'où vient cet écart&nbsp;?</div>', unsafe_allow_html=True)
+    causes = [("Prix", float(agg.effet_prix), "Vendu plus ou moins cher que prévu"),
+              ("Volume", float(agg.effet_volume), "Plus ou moins d'unités vendues"),
+              ("Mix", float(agg.effet_mix), "Produits plus ou moins chers que d'habitude")]
+    cfig = go.Figure(go.Bar(
+        x=[c[0] for c in causes], y=[c[1] / 1e3 for c in causes],
+        marker_color=[OK if c[1] >= 0 else ORANGE for c in causes],
+        text=[f"{'+' if c[1] >= 0 else '−'}{eur(abs(c[1]))}" for c in causes],
+        textposition="outside",
+        customdata=[[c[2], f"{'+' if c[1] >= 0 else '−'}{eur(abs(c[1]))}"] for c in causes],
+        hovertemplate="<b>%{x}</b><br>%{customdata[0]}<br>%{customdata[1]}<extra></extra>"))
+    cfig.update_layout(height=320, margin=dict(l=10, r=10, t=40, b=10), plot_bgcolor="#fff",
+                       paper_bgcolor="rgba(0,0,0,0)", **PLOTLY_FR)
+    cfig.update_yaxes(title_text="Contribution à l'écart (milliers d'euros)", tickformat=",.0f",
+                      ticksuffix=" k€", gridcolor=LINE, zeroline=True,
+                      zerolinecolor=MUTED, zerolinewidth=1)
+    st.plotly_chart(cfig, use_container_width=True)
+    st.caption("Ces trois causes s'additionnent **exactement** pour reconstituer l'écart total "
+               "ci-dessus. Barre **verte** = la cause a fait gagner du CA ; **orange** = elle en a "
+               "fait perdre. Échelle propre aux écarts : ils sont ~100 fois plus petits que le CA "
+               "total, les mélanger sur un même axe les rendait invisibles.")
+
+    # --- 3. Le détail de l'effet volume -------------------------------------- #
+    st.markdown('<div class="sec">3 · Et dans le volume, qu\'est-ce qui joue&nbsp;?</div>',
+                unsafe_allow_html=True)
+    st.caption(f"L'effet volume ({'+' if agg.effet_volume >= 0 else '−'}"
+               f"{eur(abs(float(agg.effet_volume)))}) se répartit entre ces trois postes.")
     d1, d2, d3 = st.columns(3)
-    for col, (lab, v) in zip((d1, d2, d3),
-                             [("dont effet promotions", drivers.dont_promo),
-                              ("dont effet calendaire", drivers.dont_calendaire),
-                              ("dont autre (tendance, météo, aléa)", drivers.dont_autre)]):
+    for col, (lab, v, aide) in zip(
+            (d1, d2, d3),
+            [("Effet promotions", float(drivers.dont_promo), "opérations commerciales"),
+             ("Effet calendaire", float(drivers.dont_calendaire), "jours fériés, week-ends, saison"),
+             ("Autre", float(drivers.dont_autre), "tendance de fond, météo, aléa")]):
         col.markdown(f'<div class="kpi"><div class="kpi-l">{lab}</div>'
-                     f'<div class="kpi-v" style="color:{OK if v>=0 else ORANGE}">{v:+,.0f} €</div>'
-                     f'<div class="kpi-d" style="color:{MUTED}">part de l\'écart de quantité</div>'
+                     f'<div class="kpi-v" style="color:{OK_TEXT if v >= 0 else ORANGE_TEXT}">'
+                     f'{"+" if v >= 0 else "−"}{eur(abs(v))}</div>'
+                     f'<div class="kpi-d" style="color:{MUTED}">{aide}</div>'
                      f'</div>', unsafe_allow_html=True)
 
 
@@ -864,21 +1187,31 @@ def page_explain():
         st.markdown('<div class="sec">Les 10 informations les plus influentes</div>', unsafe_allow_html=True)
         top = imp.head(10).iloc[::-1]
         ifig = go.Figure(go.Bar(x=top.importance_pct, y=top.libelle, orientation="h",
-                                marker_color=NAVY, text=top.importance_pct.round(1),
-                                textposition="outside"))
-        ifig.update_layout(height=360, margin=dict(l=10, r=10, t=20, b=10), plot_bgcolor="#fff",
-                           paper_bgcolor="rgba(0,0,0,0)", xaxis_title="part du poids (%)")
+                                marker_color=NAVY,
+                                text=[f"{fr(v, 1)}{NBSP}%" for v in top.importance_pct],
+                                textposition="outside",
+                                hovertemplate="<b>%{y}</b><br>%{x:.1f} % du poids<extra></extra>"))
+        ifig.update_layout(height=380, margin=dict(l=10, r=40, t=20, b=40), plot_bgcolor="#fff",
+                           paper_bgcolor="rgba(0,0,0,0)", **PLOTLY_FR)
+        ifig.update_xaxes(title_text="Part du poids dans les décisions (%)", gridcolor=LINE)
         st.plotly_chart(ifig, use_container_width=True)
     with g2:
         st.markdown('<div class="sec">Par famille</div>', unsafe_allow_html=True)
         ff = fam.iloc[::-1]
+        # 1 décimale : arrondir à l'entier affichait « Météo : 0 » (pour 0,4 %),
+        # ce qui contredisait le texte disant que la météo apporte un complément.
         ffig = go.Figure(go.Bar(x=ff.importance_pct, y=ff.famille, orientation="h",
-                                marker_color=ORANGE, text=ff.importance_pct.round(0),
-                                textposition="outside"))
-        ffig.update_layout(height=360, margin=dict(l=10, r=10, t=20, b=10), plot_bgcolor="#fff",
-                           paper_bgcolor="rgba(0,0,0,0)", xaxis_title="part du poids (%)")
+                                marker_color=ORANGE,
+                                text=[f"{fr(v, 1)}{NBSP}%" for v in ff.importance_pct],
+                                textposition="outside",
+                                hovertemplate="<b>%{y}</b><br>%{x:.1f} % du poids<extra></extra>"))
+        ffig.update_layout(height=380, margin=dict(l=10, r=45, t=20, b=40), plot_bgcolor="#fff",
+                           paper_bgcolor="rgba(0,0,0,0)", **PLOTLY_FR)
+        ffig.update_xaxes(title_text="Part du poids (%)", gridcolor=LINE, range=[0, 92])
         st.plotly_chart(ffig, use_container_width=True)
-    st.caption("Diagnostic calculé sur le scénario 2 (météo incluse), sur les 5 ans d'historique.")
+    st.caption("Lecture — ces poids disent **sur quoi le modèle s'appuie**, pas ce qui « cause » les "
+               "ventes. Diagnostic calculé sur le scénario 2 (météo incluse), sur les 5 ans "
+               "d'historique.")
 
 
 # --------------------------------------------------------------------------- #
@@ -894,13 +1227,23 @@ pages = st.navigation([
 ])
 
 with st.sidebar:
-    st.markdown("### Réglages")
-    st.caption("Ces deux choix s'appliquent à toutes les pages.")
-    st.radio("Scénario de prévision", [1, 2], key="scenario",
-             format_func=lambda s: "1 — Base (calendrier + promos)" if s == 1 else "2 — Base + météo")
-    st.selectbox("Magasin", ["Tous"] + STORES.store_id.tolist(), key="sel_store",
-                 format_func=store_label)
+    st.markdown("### Filtres")
+    st.caption("Ces deux réglages s'appliquent à **toutes les pages**. "
+               "Changez-les : tous les chiffres et graphiques se recalculent.")
+    st.radio(
+        "Scénario de prévision", [1, 2], key="scenario",
+        format_func=lambda s: ("1 — Base (calendrier + promos)" if s == 1
+                               else "2 — Base + météo"),
+        help="Quelles informations le modèle a le droit d'utiliser. "
+             "Scénario 1 : historique, calendrier et promotions. "
+             "Scénario 2 : idem + la météo. Comparez les deux pour voir l'apport de la météo.")
+    st.selectbox(
+        "Magasin analysé", ["Tous"] + STORES.store_id.tolist(), key="sel_store",
+        format_func=store_label,
+        help="« Réseau entier » additionne les 12 magasins et le canal Online. "
+             "Choisissez un magasin pour ne voir que le sien.")
     st.markdown("<br>", unsafe_allow_html=True)
-    st.caption("**Données synthétiques** — chiffres sans valeur métier.")
+    st.caption("**Données synthétiques** — chiffres fabriqués pour la démonstration, "
+               "sans valeur métier.")
 
 pages.run()
